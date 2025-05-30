@@ -67,6 +67,7 @@ file_manager = FileManager()
 # 요청/응답 모델
 class ProjectRequest(BaseModel):
     description: str
+    content_type: Optional[str] = "cooking"  # 기본값은 요리, 나중에 "travel", "mukbang" 추가 가능
     
 class ProjectResponse(BaseModel):
     project_id: str
@@ -75,6 +76,7 @@ class ProjectResponse(BaseModel):
     images: Optional[List[str]] = None
     videos: Optional[List[str]] = None
     created_at: str
+    content_type: Optional[str] = None  # 응답에도 content_type 추가
 
 # 임시 저장소 (DB 대신)
 projects_store = {}
@@ -83,23 +85,37 @@ projects_store = {}
 async def root():
     return {"message": "YouTube Shorts Automation API", "status": "running"}
 
+@app.get("/api/content-types")
+async def get_content_types():
+    """사용 가능한 콘텐츠 타입 목록 반환"""
+    return {
+        "available_types": openai_service.get_available_content_types(),
+        "descriptions": {
+            "cooking": "요리 관련 콘텐츠 (레시피, 요리 과정 등)",
+            "travel": "여행 관련 콘텐츠 (향후 지원 예정)",
+            "mukbang": "먹방 관련 콘텐츠 (향후 지원 예정)"
+        }
+    }
+
 @app.post("/api/projects/create", response_model=ProjectResponse)
 async def create_project(request: ProjectRequest):
     """프로젝트 생성 및 프롬프트 생성"""
     project_id = str(uuid.uuid4())
     print(f"Creating project with ID: {project_id}")
     print(f"Description: {request.description}")
+    print(f"Content type: {request.content_type}")
     
     try:
-        # 1. OpenAI로 이미지와 비디오 프롬프트 동시 생성
-        print("Generating prompts...")
-        image_prompts, video_prompts = await openai_service.generate_prompts(request.description)
-        print(f"Generated {len(image_prompts)} image prompts and {len(video_prompts)} video prompts")
+        # 1. OpenAI로 이미지와 비디오 프롬프트 동시 생성 (content_type 지원)
+        print(f"Generating {request.content_type} prompts...")
+        image_prompts, video_prompts = await openai_service.generate_prompts(request.description, request.content_type)
+        print(f"Generated {len(image_prompts)} image prompts and {len(video_prompts)} video prompts for {request.content_type}")
         
         # 프로젝트 정보 저장
         project_data = {
             "project_id": project_id,
             "description": request.description,
+            "content_type": request.content_type,  # content_type 저장
             "prompts": image_prompts,  # 이미지 프롬프트
             "video_prompts": video_prompts,  # 비디오 프롬프트 추가
             "images": [],

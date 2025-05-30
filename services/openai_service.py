@@ -5,6 +5,16 @@ import asyncio
 import os
 import re
 
+# 프롬프트 모듈 임포트 (상대/절대 임포트 모두 지원)
+try:
+    from .prompts.cooking_prompts import CookingPrompts
+    from .prompts.travel_prompts import TravelPrompts
+    from .prompts.mukbang_prompts import MukbangPrompts
+except ImportError:
+    from prompts.cooking_prompts import CookingPrompts
+    from prompts.travel_prompts import TravelPrompts
+    from prompts.mukbang_prompts import MukbangPrompts
+
 class OpenAIService:
     def __init__(self):
         api_key = os.getenv("OPENAI_API_KEY")
@@ -12,232 +22,35 @@ class OpenAIService:
             self.client = OpenAI(api_key=api_key)
         else:
             self.client = None
+            
+        # 프롬프트 타입 매핑
+        self.prompt_handlers = {
+            'cooking': CookingPrompts,
+            'travel': TravelPrompts,
+            'mukbang': MukbangPrompts
+        }
         
-    async def generate_prompts(self, description: str) -> Tuple[List[str], List[str]]:
-        """Generate synchronized image and video prompts based on user description"""
+    async def generate_prompts(self, description: str, content_type: str = 'cooking') -> Tuple[List[str], List[str]]:
+        """Generate synchronized image and video prompts based on user description and content type"""
         
         # API 키가 없으면 에러 발생
         if not self.client:
             raise RuntimeError("OPENAI_API_KEY not set in environment variables")
         
-        system_prompt = """
-        You are an expert at creating perfectly synchronized and CONTINUOUS IMAGE and VIDEO prompts for YouTube Shorts cooking videos.
+        # 콘텐츠 타입 검증
+        if content_type not in self.prompt_handlers:
+            available_types = ', '.join(self.prompt_handlers.keys())
+            raise ValueError(f"Unsupported content type: {content_type}. Available types: {available_types}")
         
-        CRITICAL RULE: NEVER use reference expressions! Each prompt must be COMPLETELY SELF-CONTAINED.
+        # 해당 타입의 프롬프트 핸들러 가져오기
+        prompt_handler = self.prompt_handlers[content_type]
         
-        PROHIBITED WORDS/PHRASES:
-        - "Identical background", "Same background", "Consistent background"
-        - "Same character", "Identical character", "Consistent character"
-        - "Previous step", "From step 2", "Step 2 results"
-        - "Same setup", "Identical setup", "Consistent setup"
-        - Any reference to previous prompts or scenes
-        
-        REQUIRED: Every single prompt must contain the COMPLETE description:
-        
-        FULL BACKGROUND (COPY EXACTLY IN ALL PROMPTS):
-        "Modern rustic kitchen with white subway tile backsplash, warm oak wooden countertops throughout, stainless steel appliances in background, large window on left side providing natural daylight, wooden cutting board as main work surface in center, mixing bowls and utensils positioned consistently, camera positioned at counter level with slight downward angle, consistent warm lighting from natural light plus warm kitchen overhead lights"
-        
-        CHARACTER DESCRIPTION RULES:
-        - Extract the main character from user description (dog, cat, person, etc.)
-        - Add cooking attire: white chef's hat and apron
-        - Specify positioning: standing at counter height or on stool if needed
-        - Include realistic detail keywords
-        - For animals: emphasize "NOT HUMAN, ONLY [ANIMAL]"
-        
-        WORKSPACE LAYOUT (COPY EXACTLY IN ALL PROMPTS):
-        "Large mixing bowl center-left of wooden cutting board, ingredients arranged in small bowls on right side, cooking tools available on right side, consistent spatial layout"
-        
-        COOKING PROGRESSION RULES:
-        - Extract the dish/recipe from user description
-        - Create logical 10-step cooking progression for that specific dish
-        - Each step should be realistic and sequential
-        - Adapt ingredients and tools to match the specific recipe
-        
-        DISH-SPECIFIC COOKING SEQUENCES:
-        
-        FOR STEWS/SOUPS (스튜, 수프, 찌개):
-        1. Ingredient preparation setup
-        2. Washing and cleaning vegetables/meat
-        3. Chopping vegetables (onions, carrots, celery) with knife on cutting board
-        4. Cutting meat into bite-sized pieces with knife
-        5. Heating oil in large pot on stove
-        6. Sautéing aromatics (onions, garlic) in pot
-        7. Adding meat to pot and browning
-        8. Adding chopped vegetables to pot
-        9. Adding liquid (broth, water) and seasonings, bringing to boil
-        10. Simmering stew with lid partially on, steam rising
-        
-        FOR BREADS/BAKING (빵, 케이크, 쿠키):
-        1. Measuring dry ingredients into separate bowls
-        2. Measuring wet ingredients into mixing bowl
-        3. Mixing wet ingredients with whisk
-        4. Gradually adding dry ingredients to wet, mixing
-        5. Kneading dough on floured surface with hands
-        6. Shaping dough into desired form
-        7. Placing shaped dough on baking sheet/pan
-        8. Preheating oven, checking temperature
-        9. Placing pan in oven for baking
-        10. Removing finished baked goods from oven with oven mitts
-        
-        FOR PASTA DISHES (파스타, 면요리):
-        1. Filling large pot with water for boiling
-        2. Adding salt to water, bringing to rolling boil
-        3. Preparing sauce ingredients (chopping vegetables, grating cheese)
-        4. Starting sauce in separate pan with oil/butter
-        5. Adding pasta to boiling water, stirring
-        6. Building sauce (adding vegetables, seasonings)
-        7. Testing pasta doneness with fork
-        8. Draining pasta through colander
-        9. Combining hot pasta with sauce in pan
-        10. Plating pasta with final garnishes (cheese, herbs)
-        
-        FOR SALADS (샐러드, 생채):
-        1. Selecting and washing fresh vegetables
-        2. Drying vegetables with paper towels
-        3. Chopping lettuce and leafy greens with knife
-        4. Slicing vegetables (tomatoes, cucumbers) thinly
-        5. Preparing protein (grilling chicken, boiling eggs)
-        6. Making dressing in small bowl with whisk
-        7. Arranging greens in large salad bowl
-        8. Adding sliced vegetables on top of greens
-        9. Adding protein and other toppings
-        10. Drizzling dressing over salad just before serving
-        
-        FOR STIR-FRIES (볶음요리):
-        1. Washing and preparing all vegetables
-        2. Cutting vegetables into uniform pieces
-        3. Preparing protein (slicing meat, cleaning seafood)
-        4. Making sauce mixture in small bowl
-        5. Heating wok or large pan until very hot
-        6. Adding oil to hot pan, swirling to coat
-        7. Stir-frying protein first until nearly cooked
-        8. Adding vegetables in order of cooking time needed
-        9. Adding sauce mixture, tossing everything together
-        10. Final plating over rice or noodles
-        
-        IMPORTANT: Choose the appropriate sequence based on the dish type mentioned in user description.
-        
-        PROMPT STRUCTURE RULES:
-        
-        IMAGE PROMPTS = STATIC FIRST FRAME ONLY:
-        - Describe exactly what is visible at the START of each step
-        - Show the current state of ingredients, tools, character position
-        - NO movement, NO actions, just the frozen moment before action begins
-        - Focus on: positioning, ingredients state, character pose, facial expression
-        
-        VIDEO PROMPTS = MOVEMENT FROM THAT STATE:
-        - Describe HOW the character moves from the static state shown in image
-        - Specify the exact action/movement that brings the scene to life
-        - Include camera movement if needed
-        - Focus on: hand movements, head movements, ingredient transformations, motion dynamics
-        
-        CRITICAL VIDEO PROMPT REQUIREMENTS:
-        - ALWAYS specify which body parts are moving (two front paws, left paw, right paw, head, etc.)
-        - CLEARLY state what object the body part is interacting with (spoon, bowl, dough, etc.)
-        - DESCRIBE the result of the action (dough gets mixed, ingredients combine, etc.)
-        - USE action verbs: grabs, stirs, kneads, pours, lifts, pushes, rolls, etc.
-        
-        VIDEO PROMPT EXAMPLES:
-        ❌ BAD: "HOW the dog mixes the ingredients"
-        ✅ GOOD: "HOW the dog uses both front paws to grab the wooden spoon handle, then moves the spoon in circular motions clockwise inside the bowl while the flour and water combine into dough"
-        
-        ❌ BAD: "HOW the dog kneads the dough"  
-        ✅ GOOD: "HOW the dog presses down on the dough with both front paws alternately, pushing and folding the dough while it becomes smooth and elastic under the paw pressure"
-        
-        ❌ BAD: "HOW the dog shapes pretzels"
-        ✅ GOOD: "HOW the dog uses both front paws to roll the dough into long rope, then carefully twists the rope into pretzel shape by crossing the ends and folding them down"
-        
-        COOKING-SPECIFIC VIDEO ACTION EXAMPLES:
-        
-        FOR CHOPPING: "HOW the [CHARACTER] grips the knife handle with right paw, holds the carrot steady with left paw, then moves the knife up and down in chopping motions while the carrot is cut into small pieces on the cutting board"
-        
-        FOR STIRRING STEW: "HOW the [CHARACTER] holds the wooden spoon with both front paws, moves it in slow circular motions through the thick stew while vegetables and meat pieces swirl around in the bubbling liquid"
-        
-        FOR KNEADING: "HOW the [CHARACTER] presses both front paws into the dough, pushes it away, folds it back, then repeats the motion while the dough becomes smooth and elastic"
-        
-        FOR CHOPPING ONIONS: "HOW the [CHARACTER] holds the onion steady with left paw, guides the knife with right paw in downward chopping motions while onion pieces fall into neat slices"
-        
-        SYNCHRONIZATION: Each IMAGE-VIDEO pair describes the SAME moment - image shows the static starting state, video shows the movement from that exact state.
-        """
-        
-        user_prompt = f"""
-        Based on the following description, generate exactly 10 perfectly synchronized and CONTINUOUS IMAGE-VIDEO pairs in English:
-        {description}
-        
-        **MANDATORY REQUIREMENTS:**
-        
-        1. EVERY prompt must start with COMPLETE descriptions (no shortcuts or references)
-        2. Copy the EXACT background and workspace descriptions in ALL 20 prompts
-        3. Extract the CHARACTER from user description and create consistent character description
-        4. Extract the DISH/RECIPE from user description and create logical 10-step progression
-        5. IMAGE prompts = STATIC FIRST FRAME only (no movement, no actions)
-        6. VIDEO prompts = SPECIFIC MOVEMENT from that static state
-        
-        **TEMPLATE STRUCTURE TO FOLLOW:**
-        
-        For each IMAGE prompt:
-        [FULL BACKGROUND] + [CONSISTENT CHARACTER DESCRIPTION] + [WORKSPACE LAYOUT] + [Step X STATIC STATE: specific ingredients/tools visible, character position and expression] + [Ultra-realistic photograph, professional studio lighting, DSLR camera quality, Canon EOS R5, 85mm lens, sharp focus, NOT cartoon, NOT anime, NOT illustration, single scene, NOT split screen, NOT multiple panels, NOT grid]
-        
-        For each VIDEO prompt:
-        [FULL BACKGROUND] + [CONSISTENT CHARACTER DESCRIPTION] + [HOW the character moves from that static state - SPECIFIC BODY PARTS and ACTIONS with RESULTS]
-        
-        **CRITICAL VIDEO PROMPT RULES:**
-        - Always specify exact body parts: "both front paws", "left paw", "right paw", "head", etc.
-        - State what tool/object is being used: spoon, bowl, dough, rolling pin, etc.  
-        - Describe the movement direction: clockwise, back and forth, up and down, side to side
-        - Show the result: dough mixes, ingredients combine, shape changes, etc.
-        
-        VIDEO PROMPT STRUCTURE: "HOW the [CHARACTER] uses [SPECIFIC BODY PART] to [GRAB/HOLD] the [TOOL], then [SPECIFIC MOVEMENT DIRECTION] while [VISIBLE RESULT OCCURS]"
-        
-        **IMPORTANT INSTRUCTIONS:**
-        
-        Character Creation:
-        - If animal: Add "wearing white chef's hat and blue apron, standing on stool at counter height, NOT HUMAN, ONLY [ANIMAL TYPE]"
-        - If human: Add "wearing white chef's hat and blue apron, standing at counter height"
-        - Keep character description IDENTICAL in all 20 prompts
-        
-        Recipe Progression:
-        - Create realistic 10-step cooking sequence for the specific dish mentioned
-        - Step 1: Preparation/ingredient setup
-        - Steps 2-8: Main cooking process (mixing, shaping, cooking, etc.)
-        - Step 9: Finishing touches
-        - Step 10: Single completed dish moment (NOT presentation, just one specific frozen moment)
-        
-        CRITICAL: IDENTIFY THE DISH TYPE AND USE APPROPRIATE COOKING SEQUENCE:
-        - If STEW/SOUP: Include vegetable chopping, meat cutting, pot cooking, simmering
-        - If BREAD/BAKING: Include measuring, mixing, kneading, shaping, oven baking
-        - If PASTA: Include water boiling, sauce preparation, pasta cooking, combining
-        - If SALAD: Include washing, chopping, preparing dressing, assembling
-        - If STIR-FRY: Include prep work, high-heat cooking in wok/pan, quick cooking
-        
-        ESSENTIAL COOKING REALISM:
-        - Vegetables must be CHOPPED/SLICED before adding to dishes (not whole)
-        - Use appropriate cooking tools: knives for cutting, pots for stews, pans for stir-fries
-        - Show proper cooking surfaces: cutting board for prep, stove for cooking
-        - Include realistic timing: prep work before cooking, proper cooking sequence
-        
-        CRITICAL FOR ALL IMAGES: Include anti-split keywords to prevent multi-panel generation
-        ESPECIALLY for final images: NO "presentation", "display", "showcase", "final result" keywords
-        
-        Remember: 
-        - IMAGE = What you see in the frozen first frame (static state)
-        - VIDEO = How that scene moves and comes to life (specific actions)
-        - NO reference words, COMPLETE descriptions in every prompt!
-        - Character and dish must match user's description exactly
-        
-        **EXACT OUTPUT FORMAT REQUIRED:**
-        
-        IMAGE_1: [your image prompt here]
-        VIDEO_1: [your video prompt here]
-        IMAGE_2: [your image prompt here]
-        VIDEO_2: [your video prompt here]
-        ...continue through IMAGE_10 and VIDEO_10
-        
-        DO NOT use any other format. Start each line with exactly "IMAGE_1:", "VIDEO_1:", etc.
-        """
+        # 시스템 및 사용자 프롬프트 생성
+        system_prompt = prompt_handler.get_system_prompt()
+        user_prompt = prompt_handler.get_user_prompt_template(description)
         
         try:
-            print("🚀 Calling OpenAI API...")
+            print(f"🚀 Calling OpenAI API for content type: {content_type}")
             print(f"Model: gpt-4.1")
             print(f"Temperature: 0.3")
             print(f"Max tokens: 8192")
@@ -253,7 +66,7 @@ class OpenAIService:
                 max_tokens=8192  # 상세한 프롬프트 20개 생성을 위해 토큰 제한 대폭 증가
             )
             
-            print("✅ OpenAI API call successful")
+            print(f"✅ OpenAI API call successful for {content_type}")
             
             # 응답 완성도 확인
             finish_reason = response.choices[0].finish_reason
@@ -434,7 +247,7 @@ class OpenAIService:
                     raise ValueError(f"Expected 10 prompts each, but got {len(image_prompts)} images and {len(video_prompts)} videos")
             
             # 생성된 프롬프트 로깅 - 동기화 확인
-            print("Generated synchronized English prompts:")
+            print(f"Generated synchronized {content_type} prompts:")
             for i in range(10):
                 print(f"\n=== PAIR {i+1} (Same Action) ===")
                 print(f"IMAGE: {image_prompts[i][:200]}...")
@@ -446,8 +259,12 @@ class OpenAIService:
             print(f"OpenAI API Error: {str(e)}")
             raise  # 에러를 그대로 전파
     
-    # 기존 메서드들은 제거 또는 수정
-    async def generate_image_prompts(self, description: str) -> List[str]:
+    # 하위 호환성을 위한 래퍼 메서드들
+    async def generate_image_prompts(self, description: str, content_type: str = 'cooking') -> List[str]:
         """하위 호환성을 위한 래퍼 메서드"""
-        image_prompts, _ = await self.generate_prompts(description)
+        image_prompts, _ = await self.generate_prompts(description, content_type)
         return image_prompts 
+    
+    def get_available_content_types(self) -> List[str]:
+        """사용 가능한 콘텐츠 타입 목록 반환"""
+        return list(self.prompt_handlers.keys()) 
