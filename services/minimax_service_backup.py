@@ -72,24 +72,6 @@ class MinimaxService:
         """고유한 세션 ID 생성"""
         return datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    def _get_organized_path(self, base_dir: str, session_id: str, filename: str, project_name: str = None) -> str:
-        """세션 ID와 프로젝트 이름으로 정리된 파일 경로 생성"""
-        if project_name and session_id:
-            # 프로젝트명/세션ID/ 구조
-            organized_dir = os.path.join(base_dir, project_name, session_id)
-        elif session_id:
-            # 세션ID/ 구조
-            organized_dir = os.path.join(base_dir, session_id)
-        elif project_name:
-            # 프로젝트명/ 구조
-            organized_dir = os.path.join(base_dir, project_name)
-        else:
-            # 기본 경로
-            organized_dir = base_dir
-            
-        os.makedirs(organized_dir, exist_ok=True)
-        return os.path.join(organized_dir, filename)
-    
     def list_checkpoints(self) -> List[Dict]:
         """저장된 체크포인트 목록 반환"""
         checkpoints = []
@@ -200,7 +182,30 @@ class MinimaxService:
         print(f"\n{'='*60}")
         print(f"Starting BATCH image generation for {len(prompts)} prompts")
         print(f"Session ID: {session_id}")
-        print(f"📁 Images will be saved to: downloads/minimax_images/{session_id}/")
+        print(f"Processing 2 images at a time (safer for API limits)")
+        print(f"⚠️  Process will STOP on first failure")
+        print(f"🔄 Resume from checkpoint if available")
+        print(f"{'='*60}")
+        
+        print(f"\n{'='*60}")
+        print(f"Starting SEQUENTIAL image generation for {len(prompts)} prompts")
+        print(f"Session ID: {session_id}")
+        print(f"Processing 1 image at a time (safest for API limits)")
+        print(f"⚠️  Process will STOP on first failure")
+        print(f"🔄 Resume from checkpoint if available")
+        print(f"{'='*60}")
+        
+        print(f"\n{'='*60}")
+        print(f"Starting SEQUENTIAL image generation for {len(prompts)} prompts")
+        print(f"Session ID: {session_id}")
+        print(f"Processing 1 image at a time (safest for API limits)")
+        print(f"⚠️  Process will STOP on first failure")
+        print(f"🔄 Resume from checkpoint if available")
+        print(f"{'='*60}")
+        
+        print(f"\n{'='*60}")
+        print(f"Starting BATCH image generation for {len(prompts)} prompts")
+        print(f"Session ID: {session_id}")
         print(f"Processing 3 images at a time (optimized batch size)")
         print(f"⚠️  Process will STOP on first failure")
         print(f"🔄 Resume from checkpoint if available")
@@ -226,9 +231,7 @@ class MinimaxService:
                 'completed_images': [],
                 'generated_images': [],
                 'start_time': total_start_time,
-                'phase': 'image_generation',
-                'session_image_dir': os.path.join(self.image_dir, session_id),
-                'session_video_dir': os.path.join(self.video_dir, session_id)
+                'phase': 'image_generation'
             }
             self._save_checkpoint(session_id, checkpoint)
         
@@ -530,20 +533,12 @@ class MinimaxService:
                     elif 'webp' in content_type:
                         ext = 'webp'
                     
-                    # 세션 ID별 폴더 생성
-                    if session_id:
-                        session_image_dir = os.path.join(self.image_dir, session_id)
-                        os.makedirs(session_image_dir, exist_ok=True)
-                        image_filename = f"image_{index}.{ext}"
-                        image_path = os.path.join(session_image_dir, image_filename)
-                        print(f"  📁 Saving to session folder: {session_id}/")
-                    else:
-                        image_filename = f"image_{index}.{ext}"
-                        image_path = os.path.join(self.image_dir, image_filename)
-                    
+                    # 프로젝트별 구분을 위해 session_id 추가
+                    image_filename = f"image_{session_id}_{index}.{ext}" if session_id else f"image_{index}.{ext}"
+                    image_path = os.path.join(self.image_dir, image_filename)
                     with open(image_path, 'wb') as f:
                         f.write(content)
-                    print(f"  ✓ Image saved: {os.path.relpath(image_path, self.image_dir)}")
+                    print(f"  ✓ Image saved: {os.path.basename(image_path)}")
                     
                     return image_path
                 else:
@@ -589,7 +584,24 @@ class MinimaxService:
         print(f"\n{'='*60}")
         print(f"Starting BATCH video generation for {len(images)} images")
         print(f"Session ID: {session_id}")
-        print(f"📁 Videos will be saved to: downloads/videos/{session_id}/")
+        print(f"Processing 2 videos at a time (parallel batches)")
+        print(f"Using model: I2V-01-live (4 seconds each)")
+        print(f"⚠️  Process will STOP on first failure")
+        print(f"🔄 Resume from checkpoint if available")
+        print(f"{'='*60}")
+        
+        print(f"\n{'='*60}")
+        print(f"Starting SEQUENTIAL video generation for {len(images)} images")
+        print(f"Session ID: {session_id}")
+        print(f"Processing 1 video at a time (safest for API limits)")
+        print(f"Using model: I2V-01-live (2 seconds each)")
+        print(f"⚠️  Process will STOP on first failure")
+        print(f"🔄 Resume from checkpoint if available")
+        print(f"{'='*60}")
+        
+        print(f"\n{'='*60}")
+        print(f"Starting BATCH video generation for {len(images)} images")
+        print(f"Session ID: {session_id}")
         print(f"Processing 2 videos at a time (optimized batch)")
         print(f"Using model: I2V-01-live (2 seconds each)")
         print(f"⚠️  Process will STOP on first failure")
@@ -617,9 +629,7 @@ class MinimaxService:
                 'completed_videos': [],
                 'video_paths': [],
                 'start_time': total_start_time,
-                'phase': 'video_generation',
-                'session_image_dir': os.path.join(self.image_dir, session_id),
-                'session_video_dir': os.path.join(self.video_dir, session_id)
+                'phase': 'video_generation'
             }
         else:
             # 이미지 생성에서 비디오 생성으로 단계 변경
@@ -1068,17 +1078,11 @@ class MinimaxService:
                         print(f"  Video file size: {int(content_length) / (1024*1024):.2f} MB")
                     
                     content = await response.read()
+                    video_path = os.path.join(self.video_dir, f"video_{index}.mp4")
                     
-                    # 세션 ID별 폴더 생성
-                    if session_id:
-                        session_video_dir = os.path.join(self.video_dir, session_id)
-                        os.makedirs(session_video_dir, exist_ok=True)
-                        video_filename = f"video_{index}.mp4"
-                        video_path = os.path.join(session_video_dir, video_filename)
-                        print(f"  📁 Saving to session folder: {session_id}/")
-                    else:
-                        video_filename = f"video_{index}.mp4"
-                        video_path = os.path.join(self.video_dir, video_filename)
+                    # 프로젝트별 구분을 위해 session_id 추가
+                    video_filename = f"video_{session_id}_{index}.mp4" if session_id else f"video_{index}.mp4"
+                    video_path = os.path.join(self.video_dir, video_filename)
                     
                     with open(video_path, 'wb') as f:
                         f.write(content)
@@ -1086,8 +1090,8 @@ class MinimaxService:
                     # 파일이 제대로 저장되었는지 확인
                     if os.path.exists(video_path):
                         file_size = os.path.getsize(video_path)
-                        print(f"  ✓ Video saved: {os.path.relpath(video_path, self.video_dir)} ({file_size / (1024*1024):.2f} MB)")
-                        return video_path
+                        print(f"  ✓ Video saved: {os.path.basename(video_path)} ({file_size / (1024*1024):.2f} MB)")
+                    return video_path
                     else:
                         print(f"  ✗ Failed to save video file")
                         return ""

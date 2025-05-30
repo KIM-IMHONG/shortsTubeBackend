@@ -40,9 +40,24 @@ app.add_middleware(
 )
 
 # 정적 파일 서빙 설정
-downloads_path = os.path.join(os.path.dirname(current_dir), "downloads")
-if os.path.exists(downloads_path):
-    app.mount("/downloads", StaticFiles(directory=downloads_path), name="downloads")
+downloads_path = os.path.join(current_dir, "downloads")
+
+# 필요한 디렉토리들이 존재하는지 확인하고 생성
+os.makedirs(os.path.join(downloads_path, "minimax_images"), exist_ok=True)
+os.makedirs(os.path.join(downloads_path, "videos"), exist_ok=True)
+
+# 각 하위 폴더를 직접 마운트
+minimax_images_path = os.path.join(downloads_path, "minimax_images")
+videos_path = os.path.join(downloads_path, "videos")
+
+app.mount("/minimax_images", StaticFiles(directory=minimax_images_path), name="minimax_images")
+app.mount("/videos", StaticFiles(directory=videos_path), name="videos")
+app.mount("/downloads", StaticFiles(directory=downloads_path), name="downloads")
+
+print(f"✅ Static files configured:")
+print(f"   /minimax_images -> {minimax_images_path}")
+print(f"   /videos -> {videos_path}")
+print(f"   /downloads -> {downloads_path}")
 
 # 서비스 인스턴스
 openai_service = OpenAIService()
@@ -108,82 +123,6 @@ async def create_project(request: ProjectRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/projects/{project_id}/generate-all")
-async def generate_images_and_videos(project_id: str):
-    """이미지 생성 후 자동으로 비디오 생성"""
-    print(f"Generating images and videos for project: {project_id}")
-    
-    if project_id not in projects_store:
-        # 파일에서 로드 시도
-        project_data = file_manager.load_project(project_id)
-        if project_data:
-            projects_store[project_id] = project_data
-        else:
-            raise HTTPException(status_code=404, detail="Project not found")
-    
-    project = projects_store[project_id]
-    
-    try:
-        # 1. Minimax로 이미지 생성
-        print("Generating images with Minimax...")
-        images = await minimax_service.generate_images(project["prompts"])
-        print(f"Generated {len(images)} images")
-        
-        # 이미지 경로를 웹에서 접근 가능한 경로로 변환
-        web_accessible_images = []
-        actual_image_paths = []
-        
-        for img in images:
-            if img and os.path.exists(img):
-                # 파일명만 추출
-                filename = os.path.basename(img)
-                web_accessible_images.append(f"/downloads/minimax_images/{filename}")
-                actual_image_paths.append(img)  # 실제 파일 경로 저장
-            else:
-                print(f"Warning: Image not found: {img}")
-                web_accessible_images.append("")
-                actual_image_paths.append("")
-        
-        # 프로젝트에 이미지 저장
-        project["images"] = web_accessible_images
-        project["status"] = "images_generated"
-        
-        # 2. 생성된 이미지로 바로 비디오 생성
-        print(f"Creating videos from {len(actual_image_paths)} images...")
-        # 비디오 프롬프트가 있으면 전달
-        video_prompts = project.get("video_prompts", None)
-        video_paths = await minimax_service.create_videos(actual_image_paths, video_prompts)
-        
-        # 웹 접근 가능한 비디오 경로로 변환
-        web_accessible_videos = []
-        for video in video_paths:
-            if video and os.path.exists(video):
-                filename = os.path.basename(video)
-                web_accessible_videos.append(f"/downloads/videos/{filename}")
-            else:
-                web_accessible_videos.append("")
-        
-        project["videos"] = web_accessible_videos
-        project["status"] = "completed"
-        
-        # 프로젝트 저장
-        file_manager.save_project(project_id, project)
-        projects_store[project_id] = project
-        
-        return {
-            "status": "success",
-            "images": web_accessible_images,
-            "videos": web_accessible_videos,
-            "total_generated": len([img for img in images if img])
-        }
-        
-    except Exception as e:
-        print(f"Error generating content: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-# 기존 개별 엔드포인트는 유지 (필요시 사용)
 @app.post("/api/projects/{project_id}/generate-all")
 async def generate_images_and_videos(project_id: str):
     """이미지 생성 후 자동으로 비디오 생성"""
