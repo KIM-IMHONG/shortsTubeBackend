@@ -53,6 +53,70 @@ class OpenAIService:
         - Each step should be realistic and sequential
         - Adapt ingredients and tools to match the specific recipe
         
+        DISH-SPECIFIC COOKING SEQUENCES:
+        
+        FOR STEWS/SOUPS (스튜, 수프, 찌개):
+        1. Ingredient preparation setup
+        2. Washing and cleaning vegetables/meat
+        3. Chopping vegetables (onions, carrots, celery) with knife on cutting board
+        4. Cutting meat into bite-sized pieces with knife
+        5. Heating oil in large pot on stove
+        6. Sautéing aromatics (onions, garlic) in pot
+        7. Adding meat to pot and browning
+        8. Adding chopped vegetables to pot
+        9. Adding liquid (broth, water) and seasonings, bringing to boil
+        10. Simmering stew with lid partially on, steam rising
+        
+        FOR BREADS/BAKING (빵, 케이크, 쿠키):
+        1. Measuring dry ingredients into separate bowls
+        2. Measuring wet ingredients into mixing bowl
+        3. Mixing wet ingredients with whisk
+        4. Gradually adding dry ingredients to wet, mixing
+        5. Kneading dough on floured surface with hands
+        6. Shaping dough into desired form
+        7. Placing shaped dough on baking sheet/pan
+        8. Preheating oven, checking temperature
+        9. Placing pan in oven for baking
+        10. Removing finished baked goods from oven with oven mitts
+        
+        FOR PASTA DISHES (파스타, 면요리):
+        1. Filling large pot with water for boiling
+        2. Adding salt to water, bringing to rolling boil
+        3. Preparing sauce ingredients (chopping vegetables, grating cheese)
+        4. Starting sauce in separate pan with oil/butter
+        5. Adding pasta to boiling water, stirring
+        6. Building sauce (adding vegetables, seasonings)
+        7. Testing pasta doneness with fork
+        8. Draining pasta through colander
+        9. Combining hot pasta with sauce in pan
+        10. Plating pasta with final garnishes (cheese, herbs)
+        
+        FOR SALADS (샐러드, 생채):
+        1. Selecting and washing fresh vegetables
+        2. Drying vegetables with paper towels
+        3. Chopping lettuce and leafy greens with knife
+        4. Slicing vegetables (tomatoes, cucumbers) thinly
+        5. Preparing protein (grilling chicken, boiling eggs)
+        6. Making dressing in small bowl with whisk
+        7. Arranging greens in large salad bowl
+        8. Adding sliced vegetables on top of greens
+        9. Adding protein and other toppings
+        10. Drizzling dressing over salad just before serving
+        
+        FOR STIR-FRIES (볶음요리):
+        1. Washing and preparing all vegetables
+        2. Cutting vegetables into uniform pieces
+        3. Preparing protein (slicing meat, cleaning seafood)
+        4. Making sauce mixture in small bowl
+        5. Heating wok or large pan until very hot
+        6. Adding oil to hot pan, swirling to coat
+        7. Stir-frying protein first until nearly cooked
+        8. Adding vegetables in order of cooking time needed
+        9. Adding sauce mixture, tossing everything together
+        10. Final plating over rice or noodles
+        
+        IMPORTANT: Choose the appropriate sequence based on the dish type mentioned in user description.
+        
         PROMPT STRUCTURE RULES:
         
         IMAGE PROMPTS = STATIC FIRST FRAME ONLY:
@@ -82,6 +146,16 @@ class OpenAIService:
         
         ❌ BAD: "HOW the dog shapes pretzels"
         ✅ GOOD: "HOW the dog uses both front paws to roll the dough into long rope, then carefully twists the rope into pretzel shape by crossing the ends and folding them down"
+        
+        COOKING-SPECIFIC VIDEO ACTION EXAMPLES:
+        
+        FOR CHOPPING: "HOW the [CHARACTER] grips the knife handle with right paw, holds the carrot steady with left paw, then moves the knife up and down in chopping motions while the carrot is cut into small pieces on the cutting board"
+        
+        FOR STIRRING STEW: "HOW the [CHARACTER] holds the wooden spoon with both front paws, moves it in slow circular motions through the thick stew while vegetables and meat pieces swirl around in the bubbling liquid"
+        
+        FOR KNEADING: "HOW the [CHARACTER] presses both front paws into the dough, pushes it away, folds it back, then repeats the motion while the dough becomes smooth and elastic"
+        
+        FOR CHOPPING ONIONS: "HOW the [CHARACTER] holds the onion steady with left paw, guides the knife with right paw in downward chopping motions while onion pieces fall into neat slices"
         
         SYNCHRONIZATION: Each IMAGE-VIDEO pair describes the SAME moment - image shows the static starting state, video shows the movement from that exact state.
         """
@@ -128,6 +202,19 @@ class OpenAIService:
         - Steps 2-8: Main cooking process (mixing, shaping, cooking, etc.)
         - Step 9: Finishing touches
         - Step 10: Single completed dish moment (NOT presentation, just one specific frozen moment)
+        
+        CRITICAL: IDENTIFY THE DISH TYPE AND USE APPROPRIATE COOKING SEQUENCE:
+        - If STEW/SOUP: Include vegetable chopping, meat cutting, pot cooking, simmering
+        - If BREAD/BAKING: Include measuring, mixing, kneading, shaping, oven baking
+        - If PASTA: Include water boiling, sauce preparation, pasta cooking, combining
+        - If SALAD: Include washing, chopping, preparing dressing, assembling
+        - If STIR-FRY: Include prep work, high-heat cooking in wok/pan, quick cooking
+        
+        ESSENTIAL COOKING REALISM:
+        - Vegetables must be CHOPPED/SLICED before adding to dishes (not whole)
+        - Use appropriate cooking tools: knives for cutting, pots for stews, pans for stir-fries
+        - Show proper cooking surfaces: cutting board for prep, stove for cooking
+        - Include realistic timing: prep work before cooking, proper cooking sequence
         
         CRITICAL FOR ALL IMAGES: Include anti-split keywords to prevent multi-panel generation
         ESPECIALLY for final images: NO "presentation", "display", "showcase", "final result" keywords
