@@ -1,267 +1,573 @@
 # services/prompts/cooking_prompts.py
+import re
+from typing import Dict, Tuple, List
 
 class CookingPrompts:
     """요리 관련 YouTube Shorts 생성을 위한 프롬프트 템플릿"""
     
+    # 강아지 품종별 상세 외형 정보 (Krea 수준의 초현실적 묘사)
+    DOG_BREEDS = {
+        'shiba_inu': {
+            'name': 'Shiba Inu',
+            'description': 'medium-sized Shiba Inu with golden-brown and cream fur, compact muscular build, curled tail, pointed triangular ears, dark almond-shaped eyes, black nose, white markings on chest and paws, alert expression',
+            'distinctive_features': 'fox-like face, confident posture, thick double coat with reddish-brown outer layer and cream undercoat'
+        },
+        'dachshund': {
+            'name': 'Dachshund',
+            'description': 'small elongated Dachshund with black and tan coloring, long low body, short muscular legs, floppy ears, bright dark eyes, distinctive tan markings above eyes and on chest',
+            'distinctive_features': 'sausage-shaped body, determined expression, smooth short coat with glossy finish'
+        },
+        'golden_retriever': {
+            'name': 'Golden Retriever',
+            'description': 'large Golden Retriever with flowing golden coat, athletic build, feathered tail, soft floppy ears, warm brown eyes, black nose, gentle expression',
+            'distinctive_features': 'wavy lustrous coat, friendly demeanor, strong broad chest'
+        },
+        'poodle': {
+            'name': 'Poodle',
+            'description': 'medium-sized Standard Poodle with curly white coat, elegant build, long legs, dark intelligent eyes, black nose, proud head carriage',
+            'distinctive_features': 'hypoallergenic curly coat, aristocratic posture, alert expression'
+        },
+        'corgi': {
+            'name': 'Corgi',
+            'description': 'small sturdy Corgi with orange and white fur, short legs, fox-like face, pointed erect ears, bright eyes, fluffy tail',
+            'distinctive_features': 'low-riding body, cheerful expression, thick weather-resistant coat'
+        },
+        'labrador': {
+            'name': 'Labrador',
+            'description': 'large athletic Labrador with short golden coat, powerful build, otter-like tail, pendant ears, kind eyes, broad head',
+            'distinctive_features': 'water-repellent coat, strong swimming build, gentle mouth'
+        }
+    }
+    
+    # 요리별 상세 설명과 동작
+    COOKING_DISHES = {
+        'pizza': {
+            'name': 'artisanal pizza',
+            'ingredients': 'fresh basil, mozzarella cheese, ripe tomatoes, olive oil, pizza dough',
+            'action': 'kneading pizza dough with both front paws on marble countertop',
+            'tools': 'wooden rolling pin, chef\'s knife, cheese grater'
+        },
+        'pretzel': {
+            'name': 'traditional German pretzel',
+            'ingredients': 'bread flour, coarse salt, butter, yeast',
+            'action': 'shaping pretzel dough into twisted form with skilled paw movements',
+            'tools': 'mixing bowl, pastry brush, baking sheet'
+        },
+        'pasta': {
+            'name': 'homemade pasta',
+            'ingredients': 'semolina flour, eggs, olive oil, herbs',
+            'action': 'rolling pasta dough through pasta machine with precise paw control',
+            'tools': 'pasta machine, wooden spoon, large mixing bowl'
+        },
+        'bread': {
+            'name': 'artisanal sourdough bread',
+            'ingredients': 'sourdough starter, flour, water, salt',
+            'action': 'kneading bread dough with rhythmic pushing motions',
+            'tools': 'wooden spoon, proofing basket, bench scraper'
+        }
+    }
+    
+    # 배경/위치별 상세 설정
+    LOCATIONS = {
+        'kitchen': {
+            'setting': 'modern professional kitchen',
+            'details': 'marble countertops, stainless steel appliances, warm pendant lighting, organized cooking utensils'
+        },
+        'forest': {
+            'setting': 'enchanted forest clearing',
+            'details': 'dappled sunlight through trees, wooden camp table, rustic cooking setup, natural stone fire pit'
+        },
+        'garden': {
+            'setting': 'beautiful herb garden',
+            'details': 'outdoor wooden table, fresh herbs growing nearby, natural sunlight, terracotta pots'
+        },
+        'mountain': {
+            'setting': 'scenic mountain cabin',
+            'details': 'log cabin kitchen, mountain views through windows, rustic wooden counters, cast iron cookware'
+        }
+    }
+    
+    @staticmethod
+    def parse_description(description: str) -> Tuple[Dict, Dict, Dict]:
+        """사용자 입력에서 강아지 품종, 요리, 배경 자동 추출"""
+        description_lower = description.lower()
+        
+        # 강아지 품종 추출
+        dog_info = None
+        for breed_key, breed_data in CookingPrompts.DOG_BREEDS.items():
+            breed_names = [breed_data['name'].lower(), breed_key.replace('_', ' ')]
+            if any(name in description_lower for name in breed_names):
+                dog_info = breed_data
+                break
+        
+        # 기본값: Shiba Inu
+        if not dog_info:
+            dog_info = CookingPrompts.DOG_BREEDS['shiba_inu']
+        
+        # 요리 종류 추출
+        cooking_info = None
+        for dish_key, dish_data in CookingPrompts.COOKING_DISHES.items():
+            if dish_key in description_lower or dish_data['name'].lower() in description_lower:
+                cooking_info = dish_data
+                break
+        
+        # 기본값: Pizza
+        if not cooking_info:
+            cooking_info = CookingPrompts.COOKING_DISHES['pizza']
+        
+        # 배경/위치 추출
+        location_info = None
+        for location_key, location_data in CookingPrompts.LOCATIONS.items():
+            if location_key in description_lower:
+                location_info = location_data
+                break
+        
+        # 기본값: Kitchen
+        if not location_info:
+            location_info = CookingPrompts.LOCATIONS['kitchen']
+        
+        return dog_info, cooking_info, location_info
+
+    @staticmethod
+    def generate_krea_style_image_prompt(description: str) -> str:
+        """Krea 수준의 초현실적 실사 이미지 프롬프트 자동 생성 - 단일 프롬프트 예시용"""
+        
+        # 사용자 입력 파싱
+        dog_info, cooking_info, location_info = CookingPrompts.parse_description(description)
+        
+        # Krea/Midjourney 스타일 키워드
+        krea_style_keywords = [
+            "hyperrealistic photography",
+            "8K resolution", 
+            "professional DSLR camera",
+            "studio lighting",
+            "ultra-detailed textures",
+            "photojournalism quality",
+            "Canon EOS R5 camera",
+            "85mm lens",
+            "perfect focus",
+            "natural color grading",
+            "award-winning photography"
+        ]
+        
+        # 실사 강화 키워드 (3분할 방지)
+        anti_artistic_keywords = [
+            "NOT cartoon", "NOT anime", "NOT illustration", 
+            "NOT drawing", "NOT artistic rendering", "NOT CGI",
+            "NOT split screen", "NOT multiple panels", "NOT grid",
+            "NO panels", "NO divisions", "single scene only",
+            "unified composition", "continuous scene"
+        ]
+        
+        # 프롬프트 조합 (예시용 - 첫 번째 단계)
+        image_prompt = f"""
+        {', '.join(krea_style_keywords[:5])}, {dog_info['description']} chef wearing pristine white apron and chef's hat, {cooking_info['action']}. 
+        
+        Setting: {location_info['setting']} with {location_info['details']}. 
+        
+        The dog demonstrates expert culinary technique while {cooking_info['action']}, surrounded by {cooking_info['ingredients']}. {dog_info['distinctive_features']}. 
+        
+        Using {cooking_info['tools']} with professional precision. The dog's concentrated expression shows culinary mastery. Tail wagging gently with cooking excitement.
+        
+        Perfect lighting reveals every texture: the dog's {dog_info['distinctive_features']}, the {cooking_info['ingredients']}, and the {location_info['details']}.
+        
+        Style: {', '.join(krea_style_keywords[5:])}. 
+        
+        Exclude: {', '.join(anti_artistic_keywords)}. NO HUMANS visible anywhere, only the professional dog chef working independently.
+        """.strip()
+        
+        return image_prompt
+
+    @staticmethod
+    def get_image_only_system_prompt():
+        """현실적인 개 요리 이미지 프롬프트 시스템 (1단계) - Krea 스타일 적용 - 10개 이미지"""
+        return """
+        You are an expert at creating KREA-LEVEL hyperrealistic cooking image prompts featuring dogs as professional chefs in any location.
+        
+        KREA QUALITY STANDARDS:
+        1. HYPERREALISTIC PHOTOGRAPHY - 8K resolution, professional DSLR quality, perfect lighting
+        2. ULTRA-DETAILED TEXTURES - every fur strand, ingredient detail, surface texture visible
+        3. PROFESSIONAL CINEMATOGRAPHY - Canon EOS R5, 85mm lens, studio lighting setup
+        4. PHOTOJOURNALISM QUALITY - award-winning photography standards
+        5. NATURAL COLOR GRADING - realistic color reproduction, perfect exposure
+        
+        CHARACTER CREATION SYSTEM:
+        - AUTO-DETECT dog breed from user input (Shiba Inu, Dachshund, Golden Retriever, etc.)
+        - GENERATE breed-specific physical details:
+          * Fur color, texture, and patterns (golden-brown, cream patches, black markings)
+          * Body proportions and build (compact, athletic, elongated, sturdy)
+          * Facial features (ear shape, eye color, nose, distinctive markings)
+          * Characteristic expressions and postures for each breed
+        - MAINTAIN CONSISTENCY across all generated content
+        
+        COOKING SCENE INTELLIGENCE:
+        - AUTO-EXTRACT cooking dish from description (pizza, pretzel, pasta, bread)
+        - GENERATE appropriate cooking action for the dish type
+        - SELECT proper tools and ingredients for the specific cooking method
+        - ENSURE realistic cooking progression and technique
+        
+        LOCATION ADAPTATION:
+        - AUTO-DETECT setting preference (kitchen, forest, garden, mountain)
+        - CUSTOMIZE lighting and environment for each location
+        - MAINTAIN cooking functionality in any setting
+        - ADAPT equipment and setup to location characteristics
+        
+        COOKING SEQUENCE REQUIREMENTS:
+        - IMAGE 1: Dog ACTIVELY preparing ingredients (cutting vegetables, grating cheese, chopping herbs) with tools
+        - IMAGES 2-9: Progressive cooking steps (measuring, mixing, kneading, rolling, etc.)
+        - IMAGE 10: Final completed dish presentation
+        - NEVER show finished products in early images
+        - Each step must logically follow the previous one
+        
+        KREA-STYLE PROMPT STRUCTURE:
+        "Hyperrealistic photography, 8K resolution, [DETAILED_DOG_DESCRIPTION] chef wearing pristine white apron, [SPECIFIC_COOKING_ACTION] in [CUSTOMIZED_SETTING]. Professional DSLR camera quality, Canon EOS R5, 85mm lens, perfect studio lighting. Ultra-detailed textures showing [SPECIFIC_TEXTURE_DETAILS]. [COOKING_SPECIFIC_DETAILS]. Award-winning photojournalism quality. NOT cartoon, NOT anime, NOT illustration, single scene only, NO HUMANS visible."
+        
+        RESPONSE FORMAT:
+        Generate exactly 10 Krea-quality image prompts:
+        IMAGE_1: [Hyperrealistic cooking scene - MUST be active ingredient preparation]
+        IMAGE_2: [Next logical cooking step]
+        IMAGE_3: [Progressive cooking action]
+        IMAGE_4: [Continued cooking sequence]
+        IMAGE_5: [Mid-stage cooking process]
+        IMAGE_6: [Advanced cooking technique]
+        IMAGE_7: [Near-completion cooking stage]
+        IMAGE_8: [Final cooking preparations]
+        IMAGE_9: [Finishing touches]
+        IMAGE_10: [Final completed dish presentation]
+        
+        CRITICAL QUALITY REQUIREMENTS:
+        ✅ KREA-LEVEL photorealism and detail
+        ✅ AUTO-PARSED breed, dish, and location from user input
+        ✅ PROFESSIONAL cooking technique demonstration
+        ✅ HYPERREALISTIC texture and lighting descriptions
+        ✅ MIDJOURNEY/KREA compatible formatting
+        ✅ 10-step logical cooking progression
+        ❌ NO artistic/cartoon/anime styles
+        ❌ NO human presence anywhere
+        ❌ NO split screens or multiple panels
+        """
+
+    @staticmethod
+    def get_image_only_user_prompt_template(description: str):
+        """자동 파싱 기반 이미지 프롬프트 생성 (1단계) - 10개 이미지"""
+        
+        # 자동 파싱으로 완성된 10개 프롬프트 생성 (예시용)
+        ten_prompts = CookingPrompts.generate_10_step_cooking_prompts(description)
+        krea_prompt_example = CookingPrompts.generate_krea_style_image_prompt(description)
+        
+        return f"""
+        Create 10 KREA-LEVEL hyperrealistic cooking image prompts from this simple description:
+        
+        User Input: {description}
+        
+        AUTOMATIC PROCESSING SYSTEM:
+        1. AUTO-DETECT and EXTRACT:
+           - Dog breed from input → Generate detailed breed-specific appearance
+           - Cooking dish type → Select appropriate cooking action and tools  
+           - Location preference → Customize setting and lighting
+           
+        2. GENERATE KREA-QUALITY DETAILS:
+           - 8K hyperrealistic photography specifications
+           - Professional camera and lighting setup
+           - Ultra-detailed texture descriptions
+           - Breed-specific physical characteristics
+           - Cooking-appropriate tools and ingredients
+           - Location-adapted environment details
+           
+        3. CREATE 10 LOGICAL COOKING STEPS:
+           Step 1: ACTIVE ingredient preparation (dog cutting/slicing/grating with tools) - MANDATORY
+           Steps 2-9: Progressive cooking process (measuring, mixing, kneading, shaping, etc.)
+           Step 10: Final completed dish presentation
+           
+        4. ENSURE PHOTOREALISM:
+           - Canon EOS R5 camera quality
+           - Professional studio lighting
+           - Award-winning photography standards
+           - NOT cartoon/anime/artistic rendering
+           - Single unified scene composition
+           
+        5. COOKING EXPERTISE:
+           - Professional chef-level technique
+           - Appropriate tools for the specific dish
+           - Realistic cooking action and posture
+           - Proper ingredient handling and setup
+           
+        REFERENCE EXAMPLE (single prompt format):
+        {krea_prompt_example[:200]}...
+        
+        Now generate exactly 10 different IMAGE prompts using this KREA-quality standard. Each prompt should represent a different step in the cooking process, automatically parsing the user's simple input into detailed hyperrealistic cooking scenes.
+        
+        Use the format:
+        IMAGE_1: [Step 1 - Active ingredient preparation]
+        IMAGE_2: [Step 2 - Next logical cooking step]
+        IMAGE_3: [Step 3 - Progressive cooking action]
+        IMAGE_4: [Step 4 - Continued cooking sequence]
+        IMAGE_5: [Step 5 - Mid-stage cooking process]
+        IMAGE_6: [Step 6 - Advanced cooking technique]
+        IMAGE_7: [Step 7 - Near-completion cooking stage]
+        IMAGE_8: [Step 8 - Final cooking preparations]
+        IMAGE_9: [Step 9 - Finishing touches]
+        IMAGE_10: [Step 10 - Final completed dish presentation]
+        """
+
     @staticmethod
     def get_system_prompt():
+        """이미지와 영상 프롬프트 함께 생성하는 시스템 프롬프트 - Krea 스타일 적용 - 10개 이미지 + 2개 영상"""
         return """
-        You are an expert at creating perfectly synchronized and CONTINUOUS IMAGE and VIDEO prompts for YouTube Shorts cooking videos.
+        You are an expert at creating KREA-LEVEL hyperrealistic cooking content for YouTube Shorts featuring dogs as professional chefs.
         
-        CRITICAL RULE: NEVER use reference expressions! Each prompt must be COMPLETELY SELF-CONTAINED.
+        KREA QUALITY STANDARDS:
+        1. HYPERREALISTIC PHOTOGRAPHY - 8K resolution, professional DSLR quality, perfect lighting
+        2. ULTRA-DETAILED TEXTURES - every fur strand, ingredient detail, surface texture visible
+        3. PROFESSIONAL CINEMATOGRAPHY - Canon EOS R5, 85mm lens, studio lighting
+        4. PHOTOJOURNALISM QUALITY - award-winning photography standards
+        5. NATURAL COLOR GRADING - realistic color reproduction, perfect exposure
         
-        PROHIBITED WORDS/PHRASES:
-        - "Identical background", "Same background", "Consistent background"
-        - "Same character", "Identical character", "Consistent character"
-        - "Previous step", "From step 2", "Step 2 results"
-        - "Same setup", "Identical setup", "Consistent setup"
-        - Any reference to previous prompts or scenes
+        INTELLIGENT CONTENT CREATION:
+        - AUTO-DETECT dog breed from user input and generate breed-specific characteristics
+        - AUTO-EXTRACT cooking dish type and generate appropriate cooking actions
+        - AUTO-ADAPT to any location (kitchen, forest, garden, mountain, etc.)
+        - GENERATE professional cooking techniques matching the dish type
+        - ENSURE physical realism and proper tool usage
         
-        REQUIRED: Every single prompt must contain the COMPLETE description:
+        CHARACTER CONSISTENCY SYSTEM:
+        - Detailed breed-specific physical descriptions (fur, build, features)
+        - Professional chef appearance with pristine white apron and chef's hat
+        - Realistic cooking postures and expressions
+        - Solo cooking performance without any human presence
         
-        BACKGROUND SETTINGS - ADAPT BASED ON USER DESCRIPTION:
+        COOKING SEQUENCE REQUIREMENTS:
+        - IMAGE 1: Dog ACTIVELY preparing ingredients (cutting vegetables, grating cheese, chopping herbs) with tools
+        - IMAGES 2-9: Progressive cooking steps (measuring, mixing, kneading, rolling, etc.)
+        - IMAGE 10: Final completed dish presentation
+        - VIDEO 1: 6-second sequence matching one of the key cooking steps (IMAGE 1-5)
+        - VIDEO 2: 6-second sequence of final presentation or another key step
+        - NEVER show finished products in early images
+        - Each step must logically follow the previous one
         
-        KITCHEN (DEFAULT): "Modern rustic kitchen with white subway tile backsplash, warm oak wooden countertops throughout, stainless steel appliances in background, large window on left side providing natural daylight, wooden cutting board as main work surface in center, camera positioned at counter level with slight downward angle, consistent warm lighting from natural light plus warm kitchen overhead lights"
+        VIDEO QUALITY REQUIREMENTS:
+        - 6-second cinematic sequences
+        - Natural cooking movements and techniques
+        - Professional tool handling and ingredient preparation
+        - Camera stability and perfect lighting continuity
+        - Realistic physics and cooking progression
         
-        CAMPING/OUTDOOR: "Outdoor camping setup with portable camping table as work surface, campfire with cooking grate nearby, tent and pine trees in soft-focus background, natural forest lighting with dappled sunlight filtering through leaves, camping cookware and utensils organized on table, rustic outdoor cooking environment, camera positioned at table level with natural outdoor lighting"
+        KREA-STYLE OUTPUT FORMAT:
+        Generate exactly 10 hyperrealistic images + 2 videos:
+        IMAGE_1: [8K hyperrealistic cooking scene - active ingredient preparation]
+        IMAGE_2: [Next logical cooking step]
+        IMAGE_3: [Progressive cooking action]
+        IMAGE_4: [Continued cooking sequence]
+        IMAGE_5: [Mid-stage cooking process]
+        IMAGE_6: [Advanced cooking technique]
+        IMAGE_7: [Near-completion cooking stage]
+        IMAGE_8: [Final cooking preparations]
+        IMAGE_9: [Finishing touches]
+        IMAGE_10: [Final completed dish presentation]
+        VIDEO_1: [6-second professional cooking sequence matching one key step from IMAGE 1-5]
+        VIDEO_2: [6-second professional sequence showing final presentation or another key step]
         
-        FOREST/NATURE: "Woodland clearing with large flat tree stump as natural work surface, forest stream visible in background, tall trees creating natural canopy overhead, soft filtered sunlight creating warm natural lighting, wild herbs and foraged ingredients nearby, rustic wooden bowls and nature-friendly cooking tools, camera positioned at stump level with magical forest lighting"
-        
-        BEACH/SEASIDE: "Sandy beach location with driftwood table as work surface, ocean waves and horizon in soft-focus background, sea breeze and natural coastal lighting, beach umbrella providing partial shade, seashells and coastal elements as decoration, salt-resistant cookware and utensils, camera positioned at table level with bright coastal lighting"
-        
-        GARDEN/BACKYARD: "Lush garden setting with outdoor wooden table as work surface, blooming flowers and vegetable garden in background, natural greenhouse or garden shed visible, warm golden hour lighting, fresh herbs and vegetables growing nearby, garden tools and rustic cookware, camera positioned at table level with soft garden lighting"
-        
-        PICNIC/PARK: "Park setting with checkered picnic blanket on grass as work surface, large shade tree overhead, other families visible in soft-focus background, natural park lighting with filtered sunlight, picnic basket and outdoor dining accessories, lightweight camping cookware, camera positioned at ground level with natural outdoor lighting"
-        
-        CHARACTER DESCRIPTION RULES:
-        - Extract the main character from user description (dog, cat, person, etc.)
-        - Add cooking attire: white chef's hat and apron
-        - Specify positioning: standing at counter height or on stool if needed
-        - Include realistic detail keywords
-        - For animals: emphasize "NOT HUMAN, ONLY [ANIMAL]"
-        
-        WORKSPACE LAYOUT - ADAPT BASED ON COOKING TYPE AND BACKGROUND:
-        
-        KITCHEN WORKSPACES:
-        - FOR STEWS/SOUPS: "Large pot positioned on stove top, wooden cutting board with knife for prep work, ingredients arranged in small bowls on right side, cooking spoons and ladles available, consistent spatial layout"
-        - FOR BREADS/BAKING: "Large mixing bowl center-left of wooden cutting board, measuring cups and dry ingredients in small bowls on right side, baking tools like whisks and spatulas available, consistent spatial layout"
-        - FOR PASTA/NOODLES: "Large pot for boiling water on stove, separate pan for sauce on adjacent burner, wooden cutting board for ingredient prep, pasta and sauce ingredients arranged on counter, consistent spatial layout"
-        - FOR SALADS: "Large salad bowl center-left of wooden cutting board, fresh vegetables and greens arranged on right side, small bowls for dressing ingredients, salad utensils available, consistent spatial layout"
-        - FOR STIR-FRIES: "Large wok or pan positioned on stove top, wooden cutting board for vegetable prep, ingredients arranged in small prep bowls on right side, cooking utensils and oil nearby, consistent spatial layout"
-        
-        OUTDOOR/CAMPING WORKSPACES:
-        - FOR STEWS/SOUPS: "Large camping pot positioned over campfire grate, portable cutting board for prep work, ingredients arranged in camping bowls on table, long-handled camping spoons and ladles, outdoor cooking setup"
-        - FOR GRILLED ITEMS: "Portable camping grill with adjustable grate, flat camping table for prep work, ingredients in camping containers, camping utensils and tongs, outdoor grilling setup"
-        - FOR ONE-POT MEALS: "Large cast iron Dutch oven over campfire, camping table for ingredient prep, simple camping cookware and utensils, rustic outdoor cooking arrangement"
-        
-        NATURE/FOREST WORKSPACES:
-        - FOR FORAGED MEALS: "Natural tree stump work surface, wild ingredients and herbs gathered nearby, simple wooden bowls and primitive cooking tools, stream water access for cleaning, natural cooking setup"
-        - FOR SIMPLE COOKING: "Flat rock or log as prep surface, small camping stove if needed, foraged ingredients arranged naturally, minimal rustic cooking implements"
-        
-        BEACH/COASTAL WORKSPACES:
-        - FOR SEAFOOD: "Driftwood table with fresh catch, beach sand for natural drainage, simple coastal cooking tools, seawater for cleaning, oceanic cooking environment"
-        - FOR BEACH PICNIC: "Sandy surface with waterproof mat, lightweight coastal cookware, ingredients in sand-resistant containers, beach-appropriate cooking setup"
-        
-        COOKING PROGRESSION RULES:
-        - Extract the dish/recipe from user description
-        - Create logical 10-step cooking progression for that specific dish
-        - Each step should be realistic and sequential
-        - Adapt ingredients and tools to match the specific recipe
-        
-        DISH-SPECIFIC COOKING SEQUENCES:
-        
-        FOR STEWS/SOUPS (스튜, 수프, 찌개):
-        1. Ingredient preparation setup
-        2. Washing and cleaning vegetables/meat
-        3. Chopping vegetables (onions, carrots, celery) with knife on cutting board
-        4. Cutting meat into bite-sized pieces with knife
-        5. Heating oil in large pot on stove
-        6. Sautéing aromatics (onions, garlic) in pot
-        7. Adding meat to pot and browning
-        8. Adding chopped vegetables to pot
-        9. Adding liquid (broth, water) and seasonings, bringing to boil
-        10. Simmering stew with lid partially on, steam rising
-        
-        FOR BREADS/BAKING (빵, 케이크, 쿠키):
-        1. Measuring dry ingredients into separate bowls
-        2. Measuring wet ingredients into mixing bowl
-        3. Mixing wet ingredients with whisk
-        4. Gradually adding dry ingredients to wet, mixing
-        5. Kneading dough on floured surface with hands
-        6. Shaping dough into desired form
-        7. Placing shaped dough on baking sheet/pan
-        8. Preheating oven, checking temperature
-        9. Placing pan in oven for baking
-        10. Removing finished baked goods from oven with oven mitts
-        
-        FOR PASTA DISHES (파스타, 면요리):
-        1. Filling large pot with water for boiling
-        2. Adding salt to water, bringing to rolling boil
-        3. Preparing sauce ingredients (chopping vegetables, grating cheese)
-        4. Starting sauce in separate pan with oil/butter
-        5. Adding pasta to boiling water, stirring
-        6. Building sauce (adding vegetables, seasonings)
-        7. Testing pasta doneness with fork
-        8. Draining pasta through colander
-        9. Combining hot pasta with sauce in pan
-        10. Plating pasta with final garnishes (cheese, herbs)
-        
-        FOR SALADS (샐러드, 생채):
-        1. Selecting and washing fresh vegetables
-        2. Drying vegetables with paper towels
-        3. Chopping lettuce and leafy greens with knife
-        4. Slicing vegetables (tomatoes, cucumbers) thinly
-        5. Preparing protein (grilling chicken, boiling eggs)
-        6. Making dressing in small bowl with whisk
-        7. Arranging greens in large salad bowl
-        8. Adding sliced vegetables on top of greens
-        9. Adding protein and other toppings
-        10. Drizzling dressing over salad just before serving
-        
-        FOR STIR-FRIES (볶음요리):
-        1. Washing and preparing all vegetables
-        2. Cutting vegetables into uniform pieces
-        3. Preparing protein (slicing meat, cleaning seafood)
-        4. Making sauce mixture in small bowl
-        5. Heating wok or large pan until very hot
-        6. Adding oil to hot pan, swirling to coat
-        7. Stir-frying protein first until nearly cooked
-        8. Adding vegetables in order of cooking time needed
-        9. Adding sauce mixture, tossing everything together
-        10. Final plating over rice or noodles
-        
-        IMPORTANT: Choose the appropriate sequence based on the dish type mentioned in user description.
-        
-        PROMPT STRUCTURE RULES:
-        
-        IMAGE PROMPTS = STATIC FIRST FRAME ONLY:
-        - Describe exactly what is visible at the START of each step
-        - Show the current state of ingredients, tools, character position
-        - NO movement, NO actions, just the frozen moment before action begins
-        - Focus on: positioning, ingredients state, character pose, facial expression
-        
-        VIDEO PROMPTS = MOVEMENT FROM THAT STATE:
-        - Describe HOW the character moves from the static state shown in image
-        - Specify the exact action/movement that brings the scene to life
-        - Include camera movement if needed
-        - Focus on: hand movements, head movements, ingredient transformations, motion dynamics
-        
-        CRITICAL VIDEO PROMPT REQUIREMENTS:
-        - ALWAYS specify which body parts are moving (two front paws, left paw, right paw, head, etc.)
-        - CLEARLY state what object the body part is interacting with (spoon, bowl, dough, etc.)
-        - DESCRIBE the result of the action (dough gets mixed, ingredients combine, etc.)
-        - USE action verbs: grabs, stirs, kneads, pours, lifts, pushes, rolls, etc.
-        
-        VIDEO PROMPT EXAMPLES:
-        ❌ BAD: "HOW the dog mixes the ingredients"
-        ✅ GOOD: "HOW the dog uses both front paws to grab the wooden spoon handle, then moves the spoon in circular motions clockwise inside the bowl while the flour and water combine into dough"
-        
-        ❌ BAD: "HOW the dog kneads the dough"  
-        ✅ GOOD: "HOW the dog presses down on the dough with both front paws alternately, pushing and folding the dough while it becomes smooth and elastic under the paw pressure"
-        
-        ❌ BAD: "HOW the dog shapes pretzels"
-        ✅ GOOD: "HOW the dog uses both front paws to roll the dough into long rope, then carefully twists the rope into pretzel shape by crossing the ends and folding them down"
-        
-        COOKING-SPECIFIC VIDEO ACTION EXAMPLES:
-        
-        FOR CHOPPING: "HOW the [CHARACTER] grips the knife handle with right paw, holds the carrot steady with left paw, then moves the knife up and down in chopping motions while the carrot is cut into small pieces on the cutting board"
-        
-        FOR STIRRING STEW: "HOW the [CHARACTER] holds the wooden spoon with both front paws, moves it in slow circular motions through the thick stew while vegetables and meat pieces swirl around in the bubbling liquid"
-        
-        FOR KNEADING: "HOW the [CHARACTER] presses both front paws into the dough, pushes it away, folds it back, then repeats the motion while the dough becomes smooth and elastic"
-        
-        FOR CHOPPING ONIONS: "HOW the [CHARACTER] holds the onion steady with left paw, guides the knife with right paw in downward chopping motions while onion pieces fall into neat slices"
-        
-        SYNCHRONIZATION: Each IMAGE-VIDEO pair describes the SAME moment - image shows the static starting state, video shows the movement from that exact state.
+        CRITICAL QUALITY STANDARDS:
+        ✅ KREA-LEVEL photorealism in both images and videos
+        ✅ AUTO-PARSED content from simple user input
+        ✅ PROFESSIONAL cooking demonstrations
+        ✅ HYPERREALISTIC texture and lighting
+        ✅ MIDJOURNEY/KREA compatible formatting
+        ✅ 10-step logical cooking progression + 2 key video moments
+        ❌ NO artistic/cartoon/anime styles
+        ❌ NO human presence anywhere
+        ❌ NO split screens or panels
         """
     
     @staticmethod
     def get_user_prompt_template(description: str):
+        """자동 파싱 기반 통합 프롬프트 생성 템플릿 - 10개 이미지 + 2개 영상"""
+        
         return f"""
-        Based on the following description, generate exactly 10 perfectly synchronized and CONTINUOUS IMAGE-VIDEO pairs in English:
-        {description}
+        Create 10 KREA-LEVEL images + 2 videos from: {description}
         
-        **MANDATORY REQUIREMENTS:**
+        Requirements:
+        - Auto-detect dog breed, cooking dish, and location
+        - 8K hyperrealistic photography, Canon EOS R5, 85mm lens
+        - Professional chef dog in white apron and chef's hat
+        - 10-step cooking progression (prep → mixing → shaping → completion)
+        - 2 key video moments (6-second sequences)
+        - NO cartoons, NO humans, single scene only
         
-        1. EVERY prompt must start with COMPLETE descriptions (no shortcuts or references)
-        2. ANALYZE user description to identify BACKGROUND SETTING (kitchen/camping/forest/beach/garden/picnic)
-        3. SELECT appropriate background template based on detected setting
-        4. Extract the CHARACTER from user description and create consistent character description
-        5. Extract the DISH/RECIPE from user description and create logical 10-step progression
-        6. SELECT appropriate workspace layout based on dish type AND background setting
-        7. IMAGE prompts = STATIC FIRST FRAME only (no movement, no actions)
-        8. VIDEO prompts = SPECIFIC MOVEMENT from that static state
+        Generate exactly 10 IMAGE + 2 VIDEO prompts:
         
-        **TEMPLATE STRUCTURE TO FOLLOW:**
+        IMAGE_1: [Step 1 - Active ingredient preparation with tools]
+        IMAGE_2: [Step 2 - Measuring and mixing]
+        IMAGE_3: [Step 3 - Dough/mixture preparation]
+        IMAGE_4: [Step 4 - Shaping/forming]
+        IMAGE_5: [Step 5 - Mid-stage cooking process]
+        IMAGE_6: [Step 6 - Advanced technique]
+        IMAGE_7: [Step 7 - Near completion]
+        IMAGE_8: [Step 8 - Final preparations]
+        IMAGE_9: [Step 9 - Finishing touches]
+        IMAGE_10: [Step 10 - Completed dish presentation]
+        VIDEO_1: [6-second sequence matching key cooking step]
+        VIDEO_2: [6-second sequence showing final result]
+        """
+
+    @staticmethod
+    def get_improved_video_prompt(description: str) -> str:
+        """행동 중심의 간결한 비디오 프롬프트 생성"""
         
-        For each IMAGE prompt:
-        [SELECTED BACKGROUND SETTING] + [CONSISTENT CHARACTER DESCRIPTION] + [APPROPRIATE WORKSPACE LAYOUT for dish type and background] + [Step X STATIC STATE: specific ingredients/tools visible, character position and expression] + [Ultra-realistic photograph, professional studio lighting, DSLR camera quality, Canon EOS R5, 85mm lens, sharp focus, NOT cartoon, NOT anime, NOT illustration, single scene, NOT split screen, NOT multiple panels, NOT grid]
+        # 자동 파싱
+        dog_info, cooking_info, location_info = CookingPrompts.parse_description(description)
         
-        For each VIDEO prompt:
-        [SELECTED BACKGROUND SETTING] + [CONSISTENT CHARACTER DESCRIPTION] + [HOW the character moves from that static state - SPECIFIC BODY PARTS and ACTIONS with RESULTS]
+        # 핵심 행동만 추출
+        main_action = cooking_info['action'].split(' with ')[0].split(' using ')[0]  # 도구 부분 제거
+        primary_tool = cooking_info['tools'].split(',')[0].strip()  # 첫 번째 도구만
         
-        **CRITICAL VIDEO PROMPT RULES:**
-        - Always specify exact body parts: "both front paws", "left paw", "right paw", "head", etc.
-        - State what tool/object is being used: spoon, bowl, dough, rolling pin, etc.  
-        - Describe the movement direction: clockwise, back and forth, up and down, side to side
-        - Show the result: dough mixes, ingredients combine, shape changes, etc.
+        # 간결한 행동 중심 프롬프트
+        video_prompt = f"""
+        6-second video: {dog_info['description']} chef {main_action}. 
         
-        VIDEO PROMPT STRUCTURE: "HOW the [CHARACTER] uses [SPECIFIC BODY PART] to [GRAB/HOLD] the [TOOL], then [SPECIFIC MOVEMENT DIRECTION] while [VISIBLE RESULT OCCURS]"
+        Action: Dog grips {primary_tool}, performs {main_action} with natural paw movements. Tail wags gently. 
         
-        **IMPORTANT INSTRUCTIONS:**
+        Focus: Clear hand-tool coordination, realistic cooking motion, professional technique. 8K quality, stable camera.
+        """.strip()
         
-        Background Detection:
-        - Look for keywords: "camping", "forest", "beach", "garden", "picnic", "outdoor", "nature", "kitchen" (default)
-        - If no specific location mentioned, use KITCHEN as default
-        - Match background to cooking context (e.g., camping food with camping background)
+        return video_prompt
+
+    @staticmethod
+    def create_custom_dog_info(dog_analysis: Dict[str, str]) -> Dict[str, str]:
+        """분석된 강아지 정보를 프롬프트 생성용 형식으로 변환"""
+        return {
+            'name': dog_analysis.get('breed', 'Mixed Breed'),
+            'description': dog_analysis.get('description', 'friendly dog with unique characteristics'),
+            'distinctive_features': dog_analysis.get('distinctive_features', 'alert expression and natural dog features'),
+            'chef_adaptation': dog_analysis.get('chef_adaptation', 'professional chef appearance with white apron and hat')
+        }
+
+    @staticmethod
+    def generate_image_prompts_with_custom_dog(description: str, dog_analysis: Dict[str, str]) -> str:
+        """업로드된 강아지 이미지 분석 결과를 사용하여 정확한 프롬프트 생성"""
         
-        Character Creation:
-        - If animal: Add "wearing white chef's hat and blue apron, standing on stool at counter height, NOT HUMAN, ONLY [ANIMAL TYPE]"
-        - If human: Add "wearing white chef's hat and blue apron, standing at counter height"
-        - Keep character description IDENTICAL in all 20 prompts
+        # 요리와 위치 정보는 기존 방식으로 파싱
+        _, cooking_info, location_info = CookingPrompts.parse_description(description)
         
-        Workspace Selection:
-        - FIRST identify background setting (kitchen/camping/forest/beach/garden)
-        - THEN identify dish type (stew/baking/pasta/salad/stir-fry)
-        - COMBINE both to select appropriate workspace layout
-        - Example: Forest + Stew = Natural tree stump + camping pot setup
+        # 업로드된 강아지 정보 사용
+        custom_dog_info = CookingPrompts.create_custom_dog_info(dog_analysis)
         
-        Recipe Progression:
-        - Create realistic 10-step cooking sequence for the specific dish mentioned
-        - Step 1: Preparation/ingredient setup
-        - Steps 2-8: Main cooking process (mixing, shaping, cooking, etc.)
-        - Step 9: Finishing touches
-        - Step 10: Single completed dish moment (NOT presentation, just one specific frozen moment)
+        # 실제 업로드된 강아지의 정확한 특징 강조
+        breed_name = custom_dog_info['name']
+        exact_appearance = custom_dog_info['description']
+        unique_features = custom_dog_info['distinctive_features']
         
-        CRITICAL: IDENTIFY THE DISH TYPE AND USE APPROPRIATE COOKING SEQUENCE:
-        - If STEW/SOUP: Include vegetable chopping, meat cutting, pot cooking, simmering
-        - If BREAD/BAKING: Include measuring, mixing, kneading, shaping, oven baking
-        - If PASTA: Include water boiling, sauce preparation, pasta cooking, combining
-        - If SALAD: Include washing, chopping, preparing dressing, assembling
-        - If STIR-FRY: Include prep work, high-heat cooking in wok/pan, quick cooking
+        # 간결하고 핵심적인 프롬프트 생성
+        image_prompt = f"""
+        8K hyperrealistic photography, THIS EXACT {breed_name}: {exact_appearance}, wearing white chef apron and hat, {cooking_info['action']} in {location_info['setting']}.
         
-        ESSENTIAL COOKING REALISM:
-        - Vegetables must be CHOPPED/SLICED before adding to dishes (not whole)
-        - Use appropriate cooking tools: knives for cutting, pots for stews, pans for stir-fries
-        - Show proper cooking surfaces: cutting board for prep, stove for cooking
-        - Include realistic timing: prep work before cooking, proper cooking sequence
+        CRITICAL: Maintain this dog's exact appearance - {unique_features}. Professional culinary technique with {cooking_info['tools']}, {cooking_info['ingredients']} visible.
         
-        CRITICAL FOR ALL IMAGES: Include anti-split keywords to prevent multi-panel generation
-        ESPECIALLY for final images: NO "presentation", "display", "showcase", "final result" keywords
+        Canon EOS R5, 85mm lens, studio lighting. Ultra-detailed fur texture, realistic cooking physics. NO cartoons, NO humans, only this specific dog chef.
+        """.strip()
         
-        Remember: 
-        - IMAGE = What you see in the frozen first frame (static state)
-        - VIDEO = How that scene moves and comes to life (specific actions)
-        - NO reference words, COMPLETE descriptions in every prompt!
-        - Character and dish must match user's description exactly
+        return image_prompt
+
+    @staticmethod
+    def get_custom_dog_user_prompt_template(description: str, dog_analysis: Dict[str, str]):
+        """업로드된 강아지 이미지 기반 프롬프트 템플릿 - 더 실용적이고 구체적"""
         
-        **EXACT OUTPUT FORMAT REQUIRED:**
+        custom_dog_info = CookingPrompts.create_custom_dog_info(dog_analysis)
         
-        IMAGE_1: [your image prompt here]
-        VIDEO_1: [your video prompt here]
-        IMAGE_2: [your image prompt here]
-        VIDEO_2: [your video prompt here]
-        ...continue through IMAGE_10 and VIDEO_10
+        return f"""
+        Create 10 SEQUENTIAL cooking images + 2 action videos featuring this UPLOADED DOG: {description}
         
-        DO NOT use any other format. Start each line with exactly "IMAGE_1:", "VIDEO_1:", etc.
+        UPLOADED DOG SPECIFICATIONS:
+        - Exact Breed: {custom_dog_info['name']}
+        - Physical Details: {custom_dog_info['description']}
+        - Key Features: {custom_dog_info['distinctive_features']}
+        - Chef Appearance: {custom_dog_info['chef_adaptation']}
+        
+        REQUIREMENTS:
+        - IDENTICAL dog appearance in ALL 10 images (same fur, markings, size, expression)
+        - 8K hyperrealistic photography, professional kitchen lighting
+        - Sequential cooking steps from prep to completion
+        - White chef apron and hat consistently worn
+        - Realistic tool usage and ingredient handling
+        
+        GENERATE 10 IMAGES + 2 VIDEOS:
+        
+        IMAGE_1: [This exact dog cutting/preparing main ingredients with knife]
+        IMAGE_2: [This dog measuring flour/liquids into bowl]
+        IMAGE_3: [This dog mixing ingredients with wooden spoon]
+        IMAGE_4: [This dog kneading/rolling dough with paws]
+        IMAGE_5: [This dog shaping/forming the dish]
+        IMAGE_6: [This dog adding seasonings/toppings]
+        IMAGE_7: [This dog preparing for cooking/baking]
+        IMAGE_8: [This dog monitoring cooking process]
+        IMAGE_9: [This dog adding final garnishes]
+        IMAGE_10: [This dog presenting completed dish]
+        VIDEO_1: [6-second: This dog performing key cooking action from images 3-5]
+        VIDEO_2: [6-second: This dog presenting final dish with pride]
+        """
+
+    @staticmethod
+    def get_custom_dog_system_prompt():
+        """업로드된 강아지 이미지 기반 시스템 프롬프트 - 실용성 강화"""
+        return """
+        You create HYPERREALISTIC cooking content featuring a SPECIFIC DOG from an uploaded image.
+        
+        CRITICAL SUCCESS FACTORS:
+        1. EXACT CHARACTER CONSISTENCY - Use the provided dog's physical description in EVERY image
+        2. REALISTIC COOKING SEQUENCE - Each step must logically follow the previous
+        3. PROFESSIONAL QUALITY - 8K photography, perfect lighting, award-winning standards
+        4. PRACTICAL COOKING - Real tools, proper techniques, achievable actions
+        
+        IMAGE SEQUENCE REQUIREMENTS:
+        - Images 1-3: Ingredient preparation and initial mixing
+        - Images 4-6: Dough/mixture handling and shaping
+        - Images 7-9: Cooking process and finishing touches
+        - Image 10: Final presentation
+        
+        VIDEO REQUIREMENTS:
+        - VIDEO 1: Key cooking action (mixing, kneading, or shaping) - 6 seconds
+        - VIDEO 2: Final dish presentation with dog's proud expression - 6 seconds
+        
+        CONSISTENCY RULES:
+        ✅ SAME dog physical features in every image
+        ✅ SAME chef outfit (white apron + hat) throughout
+        ✅ LOGICAL cooking progression
+        ✅ REALISTIC tool usage and physics
+        ❌ NO character inconsistencies
+        ❌ NO impossible cooking actions
+        ❌ NO humans or other animals
+        
+        Output exactly 10 images + 2 videos featuring the uploaded dog.
+        """
+
+    @staticmethod
+    def create_action_focused_video_prompt(dog_analysis: Dict[str, str], cooking_action: str) -> str:
+        """업로드된 강아지 기반 행동 중심 비디오 프롬프트"""
+        
+        custom_dog_info = CookingPrompts.create_custom_dog_info(dog_analysis)
+        
+        # 행동별 구체적인 동작 정의
+        action_details = {
+            'mixing': 'circular stirring motion with wooden spoon, bowl stays stable',
+            'kneading': 'rhythmic pushing and folding with both front paws',
+            'cutting': 'precise downward motions with knife, ingredients separate cleanly',
+            'rolling': 'back-and-forth rolling pin movement, dough flattens evenly',
+            'pouring': 'steady stream from container, controlled wrist movement',
+            'sprinkling': 'pinching motion with paws, ingredients fall naturally',
+            'presenting': 'proud posture, gentle tail wag, looking at completed dish'
+        }
+        
+        # 가장 적합한 행동 찾기
+        selected_action = 'mixing'  # 기본값
+        for action in action_details.keys():
+            if action in cooking_action.lower():
+                selected_action = action
+                break
+        
+        return f"""
+        6-second: {custom_dog_info['description']} performs {selected_action}.
+        
+        Action: {action_details[selected_action]}. This dog's {custom_dog_info['distinctive_features']} clearly visible.
+        
+        Quality: 8K, natural lighting, realistic physics, professional cooking technique.
         """ 

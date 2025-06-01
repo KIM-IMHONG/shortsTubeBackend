@@ -55,6 +55,7 @@ Thumbs.db
 # Project specific
 downloads/
 projects/
+uploads/
 *.log
 *.tmp
 

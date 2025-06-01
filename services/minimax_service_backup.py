@@ -72,6 +72,24 @@ class MinimaxService:
         """고유한 세션 ID 생성"""
         return datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    def _get_organized_path(self, base_dir: str, session_id: str, filename: str, project_name: str = None) -> str:
+        """세션 ID와 프로젝트 이름으로 정리된 파일 경로 생성"""
+        if project_name and session_id:
+            # 프로젝트명/세션ID/ 구조
+            organized_dir = os.path.join(base_dir, project_name, session_id)
+        elif session_id:
+            # 세션ID/ 구조
+            organized_dir = os.path.join(base_dir, session_id)
+        elif project_name:
+            # 프로젝트명/ 구조
+            organized_dir = os.path.join(base_dir, project_name)
+        else:
+            # 기본 경로
+            organized_dir = base_dir
+            
+        os.makedirs(organized_dir, exist_ok=True)
+        return os.path.join(organized_dir, filename)
+    
     def list_checkpoints(self) -> List[Dict]:
         """저장된 체크포인트 목록 반환"""
         checkpoints = []
@@ -182,31 +200,8 @@ class MinimaxService:
         print(f"\n{'='*60}")
         print(f"Starting BATCH image generation for {len(prompts)} prompts")
         print(f"Session ID: {session_id}")
-        print(f"Processing 2 images at a time (safer for API limits)")
-        print(f"⚠️  Process will STOP on first failure")
-        print(f"🔄 Resume from checkpoint if available")
-        print(f"{'='*60}")
-        
-        print(f"\n{'='*60}")
-        print(f"Starting SEQUENTIAL image generation for {len(prompts)} prompts")
-        print(f"Session ID: {session_id}")
-        print(f"Processing 1 image at a time (safest for API limits)")
-        print(f"⚠️  Process will STOP on first failure")
-        print(f"🔄 Resume from checkpoint if available")
-        print(f"{'='*60}")
-        
-        print(f"\n{'='*60}")
-        print(f"Starting SEQUENTIAL image generation for {len(prompts)} prompts")
-        print(f"Session ID: {session_id}")
-        print(f"Processing 1 image at a time (safest for API limits)")
-        print(f"⚠️  Process will STOP on first failure")
-        print(f"🔄 Resume from checkpoint if available")
-        print(f"{'='*60}")
-        
-        print(f"\n{'='*60}")
-        print(f"Starting BATCH image generation for {len(prompts)} prompts")
-        print(f"Session ID: {session_id}")
-        print(f"Processing 3 images at a time (optimized batch size)")
+        print(f"📁 Images will be saved to: downloads/minimax_images/{session_id}/")
+        print(f"Processing 4 images at a time (optimized batch size)")
         print(f"⚠️  Process will STOP on first failure")
         print(f"🔄 Resume from checkpoint if available")
         print(f"{'='*60}")
@@ -231,7 +226,9 @@ class MinimaxService:
                 'completed_images': [],
                 'generated_images': [],
                 'start_time': total_start_time,
-                'phase': 'image_generation'
+                'phase': 'image_generation',
+                'session_image_dir': os.path.join(self.image_dir, session_id),
+                'session_video_dir': os.path.join(self.video_dir, session_id)
             }
             self._save_checkpoint(session_id, checkpoint)
         
@@ -241,8 +238,8 @@ class MinimaxService:
             print(f"✅ All images already completed!")
             return generated_images
         
-        # 3개씩 배치 처리 (더 효율적)
-        batch_size = 3
+        # 4개씩 배치 처리 (더 효율적)
+        batch_size = 4
         for batch_start in range(0, len(remaining_prompts), batch_size):
             batch_end = min(batch_start + batch_size, len(remaining_prompts))
             batch_prompts = remaining_prompts[batch_start:batch_end]
@@ -283,7 +280,15 @@ class MinimaxService:
                 # 성공한 결과들 추가 및 체크포인트 업데이트
                 for i, result in enumerate(batch_results):
                     real_index = actual_start + i
-                    generated_images.append(result)
+                    # result가 이미지 경로 리스트인 경우 첫 번째를 메인으로 사용, 모든 경로 저장
+                    if isinstance(result, list) and len(result) > 0:
+                        # 모든 이미지 경로를 저장
+                        generated_images.append(result)  # 전체 리스트 저장
+                        print(f"✓ Generated {len(result)} images for prompt {real_index+1}")
+                    else:
+                        # 단일 이미지인 경우
+                        generated_images.append(result)
+                    
                     completed_images.append(real_index)
                     
                     # 각 이미지 완료 후 체크포인트 저장
@@ -364,7 +369,7 @@ class MinimaxService:
                 "prompt": style_enhanced_prompt[:1500],  # 강화된 실사 키워드 + 3분할 방지 키워드 포함
                 "aspect_ratio": "9:16",  # 기본 9:16, 다른 옵션: "1:1", "4:3", "3:2", "2:3", "3:4", "16:9", "21:9"
                 "response_format": "url",  # URL 형식으로 응답 (24시간 유효)
-                "n": 1,  # 생성할 이미지 수 (1-9)
+                "n": 3,  # 생성할 이미지 수 (1-9) - 3개로 변경하여 클래식 워크플로우 지원
                 "prompt_optimizer": False  # 빠른 처리를 위해 프롬프트 최적화 비활성화 (분할 방지)
             }
             
@@ -404,24 +409,29 @@ class MinimaxService:
                 if "data" in result:
                     data = result["data"]
                     
-                    # image_urls 필드로 URL이 직접 반환되는 경우
+                    # image_urls 필드로 URL이 직접 반환되는 경우 - 4개 이미지 처리
                     if "image_urls" in data and len(data["image_urls"]) > 0:
-                        image_url = data["image_urls"][0]
-                        return await self._download_image(session, image_url, index, session_id)
+                        saved_paths = []
+                        for i, image_url in enumerate(data["image_urls"]):
+                            # index_sub 형식으로 저장: image_1_0.jpg, image_1_1.jpg, etc.
+                            sub_index = f"{index}_{i}" if len(data["image_urls"]) > 1 else str(index)
+                            image_path = await self._download_image(session, image_url, sub_index, session_id)
+                            if image_path:
+                                saved_paths.append(image_path)
+                        
+                        # 모든 이미지 경로를 반환 (첫 번째가 메인)
+                        return saved_paths if saved_paths else ""
                     
-                    # task_id가 반환되는 경우 (비동기 처리)
-                    elif "task_id" in data:
-                        print(f"  Task created: {data['task_id']}")
-                        image_url = await self._wait_for_image_task(session, data["task_id"], session_id)
-                        if image_url:
-                            return await self._download_image(session, image_url, index, session_id)
-                            
-                    # task_id가 반환되는 경우 (비동기 처리)  
-                    elif "task_id" in data:
-                        print(f"  Task created: {data['task_id']}")
-                        image_path = await self._wait_for_image_task(session, data["task_id"], session_id, index)
-                        if image_path:
-                            return image_path
+                    # images 형식으로 반환되는 경우 - 4개 이미지 처리
+                    elif "images" in data and len(data["images"]) > 0:
+                        saved_paths = []
+                        for i, image_info in enumerate(data["images"]):
+                            if "url" in image_info:
+                                sub_index = f"{index}_{i}" if len(data["images"]) > 1 else str(index)
+                                image_path = await self._download_image(session, image_info["url"], sub_index, session_id)
+                                if image_path:
+                                    saved_paths.append(image_path)
+                        return saved_paths if saved_paths else ""
                 
                 print(f"  Unexpected response structure")
                 return ""
@@ -471,29 +481,32 @@ class MinimaxService:
                             data = result["data"]
                             status = data.get("status", "")
                             
-                            if status in ["finished", "completed", "success", "FINISHED", "COMPLETED", "SUCCESS"]:
-                                elapsed_time = int(time.time() - start_time)
-                                print(f"  ✅ Image generated successfully in {elapsed_time} seconds")
-                                
                             if status in ["finished", "completed", "success", "FINISHED", "COMPLETED", "SUCCESS", "Success"]:
                                 elapsed_time = int(time.time() - start_time)
                                 print(f"  ✅ Image generated successfully in {elapsed_time} seconds")
                                 
-                                # image_urls 형식으로 반환되는 경우
+                                # image_urls 형식으로 반환되는 경우 - 4개 이미지 처리
                                 if "image_urls" in data and len(data["image_urls"]) > 0:
-                                    image_url = data["image_urls"][0]
-                                    return await self._download_image(session, image_url, index, session_id)
-                                # images 형식으로 반환되는 경우
+                                    saved_paths = []
+                                    for i, image_url in enumerate(data["image_urls"]):
+                                        # index_sub 형식으로 저장: image_1_0.jpg, image_1_1.jpg, etc.
+                                        sub_index = f"{index}_{i}" if len(data["image_urls"]) > 1 else str(index)
+                                        image_path = await self._download_image(session, image_url, sub_index, session_id)
+                                        if image_path:
+                                            saved_paths.append(image_path)
+                                    return saved_paths if saved_paths else ""
+                                    
+                                # images 형식으로 반환되는 경우 - 4개 이미지 처리
                                 elif "images" in data and len(data["images"]) > 0:
-                                    image_info = data["images"][0]
-                                    if "url" in image_info:
-                                        return await self._download_image(session, image_info["url"], index, session_id)
-                                        
-                                # URL을 찾을 수 없는 경우
-                                error_msg = "Image generated but no URL found in response"
-                                print(f"  ❌ {error_msg}")
-                                raise RuntimeError(error_msg)
-                                
+                                    saved_paths = []
+                                    for i, image_info in enumerate(data["images"]):
+                                        if "url" in image_info:
+                                            sub_index = f"{index}_{i}" if len(data["images"]) > 1 else str(index)
+                                            image_path = await self._download_image(session, image_info["url"], sub_index, session_id)
+                                            if image_path:
+                                                saved_paths.append(image_path)
+                                    return saved_paths if saved_paths else ""
+                        
                             elif status in ["failed", "error", "FAILED", "ERROR"]:
                                 error_msg = "Image generation failed"
                                 print(f"  ❌ {error_msg}")
@@ -533,12 +546,20 @@ class MinimaxService:
                     elif 'webp' in content_type:
                         ext = 'webp'
                     
-                    # 프로젝트별 구분을 위해 session_id 추가
-                    image_filename = f"image_{session_id}_{index}.{ext}" if session_id else f"image_{index}.{ext}"
-                    image_path = os.path.join(self.image_dir, image_filename)
+                    # 세션 ID별 폴더 생성
+                    if session_id:
+                        session_image_dir = os.path.join(self.image_dir, session_id)
+                        os.makedirs(session_image_dir, exist_ok=True)
+                        image_filename = f"image_{index}.{ext}"
+                        image_path = os.path.join(session_image_dir, image_filename)
+                        print(f"  📁 Saving to session folder: {session_id}/")
+                    else:
+                        image_filename = f"image_{index}.{ext}"
+                        image_path = os.path.join(self.image_dir, image_filename)
+                    
                     with open(image_path, 'wb') as f:
                         f.write(content)
-                    print(f"  ✓ Image saved: {os.path.basename(image_path)}")
+                    print(f"  ✓ Image saved: {os.path.relpath(image_path, self.image_dir)}")
                     
                     return image_path
                 else:
@@ -567,8 +588,170 @@ class MinimaxService:
             print(f"Error saving base64 image: {e}")
             return ""
     
-    async def create_videos(self, images: List[str], prompts: List[str] = None, session_id: str = None) -> List[str]:
-        """이미지 리스트를 받아 비디오 생성 - 체크포인트 지원, 2개씩 병렬 처리"""
+    async def create_videos(self, image_paths: List[str], session_id: str = None) -> List[str]:
+        """이미지 경로 리스트로 비디오 생성"""
+        return await self.create_videos_with_prompts(image_paths, None, session_id)
+
+    async def generate_video_with_image(self, prompt: str, first_frame_image_path: str, task_name: str = None) -> Dict:
+        """단일 이미지를 사용하여 프롬프트 기반 영상 생성 (새로운 워크플로우용)"""
+        
+        if not self.api_key:
+            raise RuntimeError("MINIMAX_API_KEY not set in environment variables")
+        
+        if not os.path.exists(first_frame_image_path):
+            raise FileNotFoundError(f"Image file not found: {first_frame_image_path}")
+        
+        print(f"🎬 Generating single video with image...")
+        print(f"📸 Image: {os.path.basename(first_frame_image_path)}")
+        print(f"📝 Prompt: {prompt[:100]}...")
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                # 이미지를 base64로 인코딩하고 data URL 형식으로 변환
+                with open(first_frame_image_path, "rb") as image_file:
+                    image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+                
+                # 파일 확장자에 따른 MIME 타입 결정
+                file_extension = os.path.splitext(first_frame_image_path)[1].lower()
+                if file_extension in ['.jpg', '.jpeg']:
+                    mime_type = 'image/jpeg'
+                elif file_extension == '.png':
+                    mime_type = 'image/png'
+                else:
+                    mime_type = 'image/jpeg'  # 기본값
+                
+                # Data URL 형식으로 변환
+                first_frame_image_data_url = f"data:{mime_type};base64,{image_base64}"
+                
+                print(f"📸 Image format: {mime_type}")
+                print(f"📏 Base64 length: {len(image_base64)} chars")
+                
+                # 영상 생성 요청
+                request_data = {
+                    "model": "video-01",
+                    "prompt": prompt,
+                    "first_frame_image": first_frame_image_data_url  # Data URL 형식으로 전송
+                }
+                
+                print(f"🚀 Sending video generation request...")
+                
+                async with session.post(
+                    f"{self.base_url}/video_generation", 
+                    headers=self.headers,
+                    json=request_data
+                ) as response:
+                    
+                    response_text = await response.text()
+                    print(f"📄 Response status: {response.status}")
+                    print(f"📄 Response: {response_text[:300]}...")
+                    
+                    if response.status != 200:
+                        print(f"❌ Video generation request failed: {response.status}")
+                        print(f"Error details: {response_text}")
+                        raise Exception(f"Video generation failed: {response.status} - {response_text}")
+                    
+                    try:
+                        result = json.loads(response_text)
+                    except json.JSONDecodeError:
+                        print(f"❌ Failed to parse JSON response")
+                        raise Exception("Invalid JSON response from Minimax")
+                    
+                    task_id = result.get("task_id")
+                    
+                    if not task_id:
+                        print(f"❌ No task_id in response: {result}")
+                        raise Exception("No task_id received from Minimax")
+                    
+                    print(f"✅ Video generation task started: {task_id}")
+                
+                # 작업 완료 대기
+                print(f"⏳ Waiting for video generation...")
+                video_result = await self._wait_for_video_task(session, task_id)
+                
+                if video_result:
+                    # video_result가 URL인지 file_id인지 확인
+                    if video_result.startswith("http"):
+                        # URL인 경우 바로 다운로드
+                        print(f"📥 Direct video URL received")
+                        video_url = video_result
+                    else:
+                        # file_id인 경우 URL로 변환
+                        print(f"📄 File ID received: {video_result}")
+                        print(f"🔗 Converting file_id to download URL...")
+                        video_url = await self._get_file_url(session, video_result)
+                        
+                        if not video_url:
+                            print(f"❌ Failed to get download URL for file_id: {video_result}")
+                            return {
+                                "status": "failed",
+                                "task_id": task_id,
+                                "error": "Failed to get download URL"
+                            }
+                        
+                        print(f"✅ Download URL obtained: {video_url[:100]}...")
+                    
+                    # 영상 다운로드
+                    video_filename = f"{task_name or 'video'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+                    video_path = await self._download_single_video(session, video_url, video_filename)
+                    
+                    if video_path:
+                        print(f"🎉 Video generated successfully: {os.path.basename(video_path)}")
+                        
+                        return {
+                            "status": "success",
+                            "task_id": task_id,
+                            "file_id": video_result if not video_result.startswith("http") else None,
+                            "video_url": video_url,
+                            "video_path": video_path,
+                            "filename": os.path.basename(video_path)
+                        }
+                    else:
+                        print(f"❌ Video download failed")
+                        return {
+                            "status": "failed",
+                            "task_id": task_id,
+                            "error": "Video download failed"
+                        }
+                else:
+                    print(f"❌ Video generation failed - no file_id or URL received")
+                    return {
+                        "status": "failed",
+                        "task_id": task_id,
+                        "error": "No file_id or URL received"
+                    }
+        
+        except Exception as e:
+            print(f"❌ Error in video generation: {e}")
+            return {
+                "status": "failed",
+                "error": str(e)
+            }
+
+    async def _download_single_video(self, session: aiohttp.ClientSession, url: str, filename: str) -> str:
+        """단일 영상 다운로드"""
+        try:
+            print(f"📥 Downloading video: {filename}")
+            
+            async with session.get(url) as response:
+                if response.status == 200:
+                    video_path = os.path.join(self.video_dir, filename)
+                    
+                    with open(video_path, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            f.write(chunk)
+                    
+                    print(f"✅ Video downloaded: {video_path}")
+                    return video_path
+                else:
+                    print(f"❌ Failed to download video: {response.status}")
+                    raise Exception(f"Failed to download video: {response.status}")
+        
+        except Exception as e:
+            print(f"❌ Error downloading video: {e}")
+            raise e
+
+    async def create_videos_with_prompts(self, image_paths: List[str], video_prompts: List[str] = None, session_id: str = None) -> List[str]:
+        """이미지와 비디오 프롬프트를 사용하여 비디오 생성 - 체크포인트 지원, 2개씩 병렬 처리"""
         if not self.api_key:
             raise RuntimeError("MINIMAX_API_KEY not set in .env file")
             
@@ -582,26 +765,9 @@ class MinimaxService:
         total_start_time = time.time()
         
         print(f"\n{'='*60}")
-        print(f"Starting BATCH video generation for {len(images)} images")
+        print(f"Starting BATCH video generation for {len(image_paths)} images")
         print(f"Session ID: {session_id}")
-        print(f"Processing 2 videos at a time (parallel batches)")
-        print(f"Using model: I2V-01-live (4 seconds each)")
-        print(f"⚠️  Process will STOP on first failure")
-        print(f"🔄 Resume from checkpoint if available")
-        print(f"{'='*60}")
-        
-        print(f"\n{'='*60}")
-        print(f"Starting SEQUENTIAL video generation for {len(images)} images")
-        print(f"Session ID: {session_id}")
-        print(f"Processing 1 video at a time (safest for API limits)")
-        print(f"Using model: I2V-01-live (2 seconds each)")
-        print(f"⚠️  Process will STOP on first failure")
-        print(f"🔄 Resume from checkpoint if available")
-        print(f"{'='*60}")
-        
-        print(f"\n{'='*60}")
-        print(f"Starting BATCH video generation for {len(images)} images")
-        print(f"Session ID: {session_id}")
+        print(f"📁 Videos will be saved to: downloads/videos/{session_id}/")
         print(f"Processing 2 videos at a time (optimized batch)")
         print(f"Using model: I2V-01-live (2 seconds each)")
         print(f"⚠️  Process will STOP on first failure")
@@ -616,32 +782,34 @@ class MinimaxService:
         start_index = len(completed_videos)
         if start_index > 0:
             print(f"\n🔄 RESUMING FROM CHECKPOINT:")
-            print(f"   Already completed: {start_index}/{len(images)} videos")
+            print(f"   Already completed: {start_index}/{len(image_paths)} videos")
             print(f"   Starting from video {start_index + 1}")
         
         # 체크포인트 초기화 또는 비디오 단계로 업데이트
         if 'session_id' not in checkpoint:
             checkpoint = {
                 'session_id': session_id,
-                'total_images': len(images),
-                'images': images,
-                'prompts': prompts,
+                'total_images': len(image_paths),
+                'images': image_paths,
+                'prompts': video_prompts,
                 'completed_videos': [],
                 'video_paths': [],
                 'start_time': total_start_time,
-                'phase': 'video_generation'
+                'phase': 'video_generation',
+                'session_image_dir': os.path.join(self.image_dir, session_id),
+                'session_video_dir': os.path.join(self.video_dir, session_id)
             }
         else:
             # 이미지 생성에서 비디오 생성으로 단계 변경
             checkpoint['phase'] = 'video_generation'
-            checkpoint['images'] = images
-            checkpoint['prompts'] = prompts
+            checkpoint['images'] = image_paths
+            checkpoint['prompts'] = video_prompts
             checkpoint['video_start_time'] = total_start_time
             
         self._save_checkpoint(session_id, checkpoint)
         
         # 남은 이미지들만 처리
-        remaining_images = images[start_index:]
+        remaining_images = image_paths[start_index:]
         if not remaining_images:
             print(f"✅ All videos already completed!")
             return video_paths
@@ -666,13 +834,13 @@ class MinimaxService:
                 
                 if not image_path or not os.path.exists(image_path):
                     error_msg = f"No image available for video {real_index+1}"
-                    print(f"[Video {real_index+1}/{len(images)}] ❌ {error_msg}")
+                    print(f"[Video {real_index+1}/{len(image_paths)}] ❌ {error_msg}")
                     raise RuntimeError(error_msg)
                 
                 # 해당 장면의 프롬프트 가져오기
-                scene_prompt = prompts[real_index] if prompts and real_index < len(prompts) else None
+                scene_prompt = video_prompts[real_index] if video_prompts and real_index < len(video_prompts) else None
                 
-                print(f"[Video {real_index+1}/{len(images)}] 🚀 Starting batch generation...")
+                print(f"[Video {real_index+1}/{len(image_paths)}] 🚀 Starting batch generation...")
                 print(f"  📁 Image: {os.path.basename(image_path)}")
                 if scene_prompt:
                     print(f"  📝 Prompt: {scene_prompt[:50]}...")
@@ -684,16 +852,16 @@ class MinimaxService:
                         video_time = int(time.time() - video_start_time)
                         
                         if video_path:
-                            print(f"[Video {real_index+1}/{len(images)}] ✅ Completed in {video_time}s")
+                            print(f"[Video {real_index+1}/{len(image_paths)}] ✅ Completed in {video_time}s")
                             return real_index, video_path
                         else:
                             error_msg = f"Failed to create video {real_index+1} after {video_time}s"
-                            print(f"[Video {real_index+1}/{len(images)}] ❌ {error_msg}")
+                            print(f"[Video {real_index+1}/{len(image_paths)}] ❌ {error_msg}")
                             raise RuntimeError(error_msg)
                             
                     except Exception as e:
                         error_msg = f"Error creating video {real_index+1}: {e}"
-                        print(f"[Video {real_index+1}/{len(images)}] ❌ {error_msg}")
+                        print(f"[Video {real_index+1}/{len(image_paths)}] ❌ {error_msg}")
                         raise RuntimeError(error_msg)
             
             tasks = [create_single_video(i, image_path) for i, image_path in enumerate(batch_images)]
@@ -725,19 +893,19 @@ class MinimaxService:
                 print(f"\n{'='*60}")
                 print(f"❌ VIDEO GENERATION FAILED - STOPPING PROCESS")
                 print(f"Error: {e}")
-                print(f"Completed videos: {len(completed_videos)}/{len(images)}")
+                print(f"Completed videos: {len(completed_videos)}/{len(image_paths)}")
                 print(f"💾 Progress saved to checkpoint: {session_id}")
                 print(f"🔄 To resume, use the same session_id: {session_id}")
                 print(f"{'='*60}")
                 raise RuntimeError(f"Video generation failed: {e}")
             
             # 배치 간 대기 (API 제한 방지)
-            if actual_end < len(images):
+            if actual_end < len(image_paths):
                 print(f"⏳ Waiting 5 seconds before next batch...")
                 await asyncio.sleep(5)
         
             # 배치 간 대기 (API 제한 방지)
-            if actual_end < len(images):
+            if actual_end < len(image_paths):
                 print(f"⏳ Waiting 10 seconds before next batch...")
                 await asyncio.sleep(10)
         
@@ -754,16 +922,12 @@ class MinimaxService:
         print(f"🎉 ALL VIDEOS GENERATED SUCCESSFULLY!")
         print(f"  Session ID: {session_id}")
         print(f"  Total time: {total_time // 60}m {total_time % 60}s")
-        print(f"  Success rate: {success_count}/{len(images)}")
-        print(f"  Average time per video: {total_time // len(images) if images else 0}s")
-        print(f"  Time saved with parallel processing: ~{len(images) * 3 - total_time // 60}+ minutes!")
+        print(f"  Success rate: {success_count}/{len(image_paths)}")
+        print(f"  Average time per video: {total_time // len(image_paths) if image_paths else 0}s")
         print(f"{'='*60}\n")
         
-        # 모든 작업 완료 시 체크포인트 삭제 (선택사항)
-        # self._clear_checkpoint(session_id)
-                
         return video_paths
-        
+
     async def _create_single_video(self, session: aiohttp.ClientSession, image_path: str, index: int, scene_prompt: str = None, session_id: str = None) -> str:
         """단일 이미지로 비디오 생성"""
         try:
@@ -793,8 +957,8 @@ class MinimaxService:
                 "first_frame_image": f"data:image/jpeg;base64,{image_base64}",
                 "parameters": {
                     "prompt_optimizer": False,  # 빠른 처리를 위해 비활성화
-                    "motion_strength": 0.1,  # 움직임 강도 더욱 최소화 (0.3 -> 0.1)
-                    "video_length": 2  # 비디오 길이 최소화 (4초 -> 2초)
+                    "motion_strength": 0.3,  # 움직임 강도 증가 (0.1 -> 0.3) - 6초 동안 더 많은 동작
+                    "video_length": 6  # 비디오 길이 6초로 변경
                 }
             }
             
@@ -839,13 +1003,12 @@ class MinimaxService:
                     
                     file_id = await self._wait_for_video_task(session, task_id)
                     if file_id:
-                        # file_id가 실제로 URL인 경우 (직접 URL 반환)
+                        # file_id가 URL인 경우
                         if file_id.startswith("http"):
                             print(f"  Direct video URL received")
                             return await self._download_video(session, file_id, index, session_id)
                         else:
                             # file_id인 경우 retrieve API 호출
-                            print(f"  Retrieving download URL for file_id: {file_id}")
                             video_url = await self._get_file_url(session, file_id)
                             if video_url:
                                 return await self._download_video(session, video_url, index, session_id)
@@ -868,7 +1031,7 @@ class MinimaxService:
             import traceback
             traceback.print_exc()
             return ""
-            
+
     async def _wait_for_video_task(self, session: aiohttp.ClientSession, task_id: str) -> str:
         """비디오 생성 작업 완료 대기 - file_id 반환"""
         max_attempts = 1200  # 최대 10분 대기 (2초 간격, 테스트용 더 단축)
@@ -1005,57 +1168,108 @@ class MinimaxService:
     async def _get_file_url(self, session: aiohttp.ClientSession, file_id: str) -> str:
         """file_id로 다운로드 URL 획득"""
         try:
-            # Files Retrieve API 사용 - GET 요청 (예시 코드와 동일)
+            # Files Retrieve API 사용
             url = f"{self.base_url}/files/retrieve"
             
-            print(f"Retrieving file URL for file_id: {file_id}")
-            print(f"API endpoint: {url}?file_id={file_id}")
+            print(f"🔍 Retrieving download URL for file_id: {file_id}")
+            print(f"📡 API endpoint: {url}")
+            
+            # Group ID 포함 파라미터
+            params = {
+                "file_id": file_id
+            }
+            
+            # Group ID가 설정되어 있으면 추가
+            if self.group_id:
+                params["GroupId"] = self.group_id
+                print(f"🏢 Using Group ID: {self.group_id}")
             
             async with session.get(
                 url,
-                params={"file_id": file_id},
-                headers=self.headers
+                params=params,
+                headers=self.headers,
+                timeout=aiohttp.ClientTimeout(total=30)
             ) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    
                 response_text = await response.text()
-                print(f"File retrieve response status: {response.status}")
-                print(f"Response: {response_text[:500]}...")
+                print(f"📄 File retrieve response status: {response.status}")
+                print(f"📄 Response content: {response_text[:500]}...")
                 
                 if response.status == 200:
-                    result = json.loads(response_text)
+                    try:
+                        result = json.loads(response_text)
+                    except json.JSONDecodeError as e:
+                        print(f"❌ Failed to parse JSON response: {e}")
+                        return ""
                     
                     # base_resp 체크
                     if "base_resp" in result:
                         base_resp = result["base_resp"]
                         if base_resp.get("status_code") != 0:
-                            print(f"File retrieve error: {base_resp.get('status_code')} - {base_resp.get('status_msg')}")
+                            error_msg = f"File retrieve error: {base_resp.get('status_code')} - {base_resp.get('status_msg')}"
+                            print(f"❌ {error_msg}")
                             return ""
                     
-                    # 다양한 위치에서 URL 찾기
-                    if "file" in result and "download_url" in result["file"]:
-                        return result["file"]["download_url"]
-                    elif "download_url" in result:
-                        return result["download_url"]
-                    elif "url" in result:
-                        return result["url"]
-                    elif "data" in result:
-                        data = result["data"]
-                        if "download_url" in data:
-                            return data["download_url"]
-                        elif "url" in data:
-                            return data["url"]
-                        elif "file" in data and "download_url" in data["file"]:
-                            return data["file"]["download_url"]
-                            
-                    print(f"Could not find download URL in response: {json.dumps(result, indent=2)}")
-                else:
-                    print(f"Failed to get file URL: HTTP {response.status}")
-                    print(f"Error response: {await response.text()}")
+                    # 다양한 위치에서 다운로드 URL 찾기
+                    download_url = None
                     
+                    # 우선순위별로 URL 검색
+                    search_paths = [
+                        # 가장 일반적인 경로들
+                        ["file", "download_url"],
+                        ["download_url"],
+                        ["url"],
+                        ["data", "download_url"],
+                        ["data", "url"],
+                        ["data", "file", "download_url"],
+                        ["data", "file", "url"],
+                        ["file", "url"],
+                        # 비디오 관련 경로들
+                        ["video", "download_url"],
+                        ["video", "url"],
+                        ["data", "video", "download_url"],
+                        ["data", "video", "url"],
+                        # 파일 관련 경로들
+                        ["file_url"],
+                        ["data", "file_url"],
+                        # 추가 가능한 경로들
+                        ["files", "download_url"],
+                        ["files", "url"]
+                    ]
+                    
+                    for path in search_paths:
+                        current = result
+                        try:
+                            for key in path:
+                                current = current[key]
+                            if isinstance(current, str) and current.startswith("http"):
+                                download_url = current
+                                print(f"✅ Found download URL at path: {' -> '.join(path)}")
+                                break
+                        except (KeyError, TypeError):
+                            continue
+                    
+                    if download_url:
+                        print(f"✅ Download URL: {download_url[:100]}...")
+                        return download_url
+                    else:
+                        print(f"❌ Could not find download URL in response")
+                        print(f"📄 Full response structure:")
+                        print(json.dumps(result, indent=2, ensure_ascii=False)[:1000])
+                        return ""
+                        
+                elif response.status == 404:
+                    print(f"❌ File not found: {file_id}")
+                    return ""
+                else:
+                    print(f"❌ Failed to get file URL: HTTP {response.status}")
+                    print(f"📄 Error response: {response_text[:500]}")
+                    return ""
+                    
+        except asyncio.TimeoutError:
+            print(f"❌ Timeout getting file URL after 30 seconds")
+            return ""
         except Exception as e:
-            print(f"Error getting file URL: {e}")
+            print(f"❌ Error getting file URL: {e}")
             import traceback
             traceback.print_exc()
             
@@ -1078,11 +1292,17 @@ class MinimaxService:
                         print(f"  Video file size: {int(content_length) / (1024*1024):.2f} MB")
                     
                     content = await response.read()
-                    video_path = os.path.join(self.video_dir, f"video_{index}.mp4")
                     
-                    # 프로젝트별 구분을 위해 session_id 추가
-                    video_filename = f"video_{session_id}_{index}.mp4" if session_id else f"video_{index}.mp4"
-                    video_path = os.path.join(self.video_dir, video_filename)
+                    # 세션 ID별 폴더 생성
+                    if session_id:
+                        session_video_dir = os.path.join(self.video_dir, session_id)
+                        os.makedirs(session_video_dir, exist_ok=True)
+                        video_filename = f"video_{index}.mp4"
+                        video_path = os.path.join(session_video_dir, video_filename)
+                        print(f"  📁 Saving to session folder: {session_id}/")
+                    else:
+                        video_filename = f"video_{index}.mp4"
+                        video_path = os.path.join(self.video_dir, video_filename)
                     
                     with open(video_path, 'wb') as f:
                         f.write(content)
@@ -1090,8 +1310,8 @@ class MinimaxService:
                     # 파일이 제대로 저장되었는지 확인
                     if os.path.exists(video_path):
                         file_size = os.path.getsize(video_path)
-                        print(f"  ✓ Video saved: {os.path.basename(video_path)} ({file_size / (1024*1024):.2f} MB)")
-                    return video_path
+                        print(f"  ✓ Video saved: {os.path.relpath(video_path, self.video_dir)} ({file_size / (1024*1024):.2f} MB)")
+                        return video_path
                     else:
                         print(f"  ✗ Failed to save video file")
                         return ""
@@ -1107,3 +1327,112 @@ class MinimaxService:
             print(f"  ✗ Error downloading video: {e}")
             
         return ""
+
+    async def create_videos_with_optimized_prompts(self, image_paths: List[str], optimized_prompts: List[str]) -> List[str]:
+        """클래식 워크플로우용: 선택된 이미지들과 최적화된 프롬프트들로 비디오 생성"""
+        
+        if len(image_paths) != len(optimized_prompts):
+            print(f"Error: Mismatch between images ({len(image_paths)}) and prompts ({len(optimized_prompts)})")
+            return []
+        
+        print(f"🎬 Creating {len(image_paths)} videos with optimized prompts...")
+        
+        async with aiohttp.ClientSession() as session:
+            video_paths = []
+            
+            for i, (image_path, prompt) in enumerate(zip(image_paths, optimized_prompts)):
+                try:
+                    print(f"\n📹 Generating video {i+1}/{len(image_paths)}")
+                    print(f"🖼️ Image: {os.path.basename(image_path)}")
+                    print(f"📝 Prompt: {prompt[:100]}...")
+                    
+                    # 이미지를 base64로 인코딩
+                    with open(image_path, "rb") as image_file:
+                        base64_data = base64.b64encode(image_file.read()).decode('utf-8')
+                    
+                    # 파일 확장자에 따른 MIME 타입 결정
+                    file_ext = os.path.splitext(image_path)[1].lower()
+                    if file_ext in ['.png']:
+                        mime_type = 'image/png'
+                    else:
+                        mime_type = 'image/jpeg'
+                    
+                    # Data URL 형식으로 변환
+                    data_url = f"data:{mime_type};base64,{base64_data}"
+                    
+                    print(f"📊 Image format: {mime_type}, Base64 length: {len(base64_data)}")
+                    
+                    # Minimax 비디오 생성 API 호출
+                    payload = {
+                        "model": "video-01",
+                        "prompt": prompt,
+                        "first_frame_image": data_url,  # Data URL 형식 사용
+                    }
+                    
+                    async with session.post(
+                        f"{self.base_url}/video_generation",
+                        headers=self.headers,
+                        json=payload
+                    ) as response:
+                        
+                        print(f"📡 API Response Status: {response.status}")
+                        
+                        if response.status == 200:
+                            response_data = await response.json()
+                            print(f"✅ Video generation request successful")
+                            print(f"📄 Response: {response_data}")
+                            
+                            task_id = response_data.get("task_id")
+                            if task_id:
+                                print(f"⏳ Waiting for video generation (task_id: {task_id})...")
+                                
+                                # 작업 완료 대기
+                                video_result = await self._wait_for_video_task(session, task_id)
+                                
+                                if video_result:
+                                    if video_result.startswith("http"):
+                                        # URL인 경우 바로 다운로드
+                                        video_url = video_result
+                                    else:
+                                        # file_id인 경우 URL로 변환
+                                        print(f"🔗 Converting file_id to download URL...")
+                                        video_url = await self._get_file_url(session, video_result)
+                                    
+                                    if video_url:
+                                        # 비디오 다운로드
+                                        video_filename = f"classic_video_{i+1}_{task_id}.mp4"
+                                        video_path = await self._download_single_video(session, video_url, video_filename)
+                                        
+                                        if video_path:
+                                            print(f"🎉 Video {i+1} generated successfully: {os.path.basename(video_path)}")
+                                            video_paths.append(video_path)
+                                        else:
+                                            print(f"❌ Failed to download video {i+1}")
+                                            video_paths.append("")
+                                    else:
+                                        print(f"❌ Failed to get download URL for video {i+1}")
+                                        video_paths.append("")
+                                else:
+                                    print(f"❌ Video generation failed for video {i+1}")
+                                    video_paths.append("")
+                            else:
+                                print(f"❌ No task_id received for video {i+1}")
+                                video_paths.append("")
+                        else:
+                            error_text = await response.text()
+                            print(f"❌ API error for video {i+1}: {response.status}")
+                            print(f"📄 Error response: {error_text}")
+                            video_paths.append("")
+                            
+                except Exception as e:
+                    print(f"❌ Error generating video {i+1}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    video_paths.append("")
+            
+            print(f"\n📊 Video generation summary:")
+            print(f"   Requested: {len(image_paths)}")
+            print(f"   Successful: {len([p for p in video_paths if p])}")
+            print(f"   Failed: {len([p for p in video_paths if not p])}")
+            
+            return video_paths

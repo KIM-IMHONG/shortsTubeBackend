@@ -63,4 +63,10 @@ class FileManager:
         
     def get_file_path(self, project_id: str, filename: str) -> str:
         """파일 경로 반환"""
-        return os.path.join(self.base_dir, project_id, filename) 
+        return os.path.join(self.base_dir, project_id, filename)
+    
+    def delete_project(self, project_id: str):
+        """프로젝트 폴더 전체 삭제"""
+        project_dir = os.path.join(self.base_dir, project_id)
+        if os.path.exists(project_dir):
+            shutil.rmtree(project_dir) 
